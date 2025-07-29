@@ -1,4 +1,3 @@
-
 import type { ResumeTemplate } from '../../types';
 
 export const templates: ResumeTemplate[] = [
@@ -12,13 +11,12 @@ export const templates: ResumeTemplate[] = [
       secondary: ['Contact Information', 'Education', 'Skills', 'Languages'],
     },
     css: `
-      @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&family=Prata&display=swap');
       /* Reset & Base */
       body { font-family: 'Montserrat', sans-serif; line-height: 1.6; color: #5D5D5D; background-color: #fff; margin: 0; padding: 0; }
       h1, h2, h3, p, ul, li { margin: 0; padding: 0; }
-      ul { list-style: none; }
+      ul { list-style: none; list-style-type: disc !important; padding-left: 20px !important; }
       li { padding-left: 1.5em; position: relative; margin-bottom: 0.5em; }
-      li::before { content: '•'; color: #8B4513; font-weight: bold; display: inline-block; width: 1em; margin-left: -1em; position: absolute; left: 0; top: 0.1em; }
+      li::before { content: none !important; } /* Disable custom bullet points in print */
       section { margin-bottom: 30px; }
       /* Layout */
       .resume-container { display: flex; max-width: 1024px; min-height: 100vh; margin: 0 auto; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
@@ -56,7 +54,6 @@ export const templates: ResumeTemplate[] = [
     },
     css: `
       body { font-family: 'Georgia', serif; line-height: 1.6; color: #343a40; background-color: #fff; margin: 0; padding: 0; }
-      .resume-container { max-width: 800px; margin: auto; padding: 40px; display: block; }
       h1 { font-size: 2.4em; margin-bottom: 0; color: #212529; text-transform: uppercase; letter-spacing: 2px; }
       .main-header p { font-size: 1em; margin-top: 5px; color: #6c757d; }
       h2 { font-size: 1.3em; color: #343a40; border-bottom: 2px solid #343a40; padding-bottom: 5px; margin-top: 25px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
@@ -79,7 +76,6 @@ export const templates: ResumeTemplate[] = [
     },
     css: `
       body { font-family: 'Helvetica Neue', sans-serif; line-height: 1.6; color: #333; background-color: #f8f9fa; margin: 0; padding: 0; }
-      .resume-container { max-width: 800px; margin: auto; padding: 40px; background-color: #fff; box-shadow: 0 0 15px rgba(0,0,0,0.05); display: block; }
       h1 { font-size: 2.8em; margin-bottom: 5px; color: #0047AB; font-weight: 300; }
       .main-header p { font-size: 1em; margin-top: 5px; color: #555; }
       h2 { font-size: 1.5em; color: #0047AB; border-bottom: 2px solid #0047AB; padding-bottom: 8px; margin-top: 30px; margin-bottom: 20px; font-weight: 500; }
@@ -100,7 +96,6 @@ export const templates: ResumeTemplate[] = [
     },
     css: `
       body { font-family: 'Menlo', 'Courier New', monospace; line-height: 1.5; color: #e0e0e0; background-color: #2d2d2d; margin: 0; padding: 0; }
-      .resume-container { max-width: 800px; margin: auto; padding: 40px; display: block; }
       h1 { font-size: 2.2em; margin-bottom: 0; color: #61dafb; }
       .main-header p { font-size: 1em; margin-top: 5px; color: #9a9a9a; }
       h2 { font-size: 1.2em; color: #00c2c7; border-bottom: 1px solid #00c2c7; padding-bottom: 5px; margin-top: 25px; margin-bottom: 15px; letter-spacing: 1px; }
@@ -121,7 +116,6 @@ export const templates: ResumeTemplate[] = [
     },
     css: `
       body { font-family: 'Garamond', serif; line-height: 1.7; color: #404040; background-color: #fff; margin: 0; padding: 0; }
-      .resume-container { max-width: 800px; margin: auto; padding: 40px; display: block; }
       h1 { font-size: 2.6em; margin-bottom: 0; color: #800020; font-weight: normal; text-align: center; }
       .main-header p { font-size: 1.1em; margin-top: 5px; color: #555; text-align: center; border-top: 1px solid #eee; border-bottom: 1px solid #eee; padding: 10px 0; }
       h2 { font-size: 1.4em; color: #800020; border: none; text-align: center; font-variant: small-caps; letter-spacing: 1px; margin-top: 30px; margin-bottom: 20px; }
@@ -142,7 +136,6 @@ export const templates: ResumeTemplate[] = [
     },
     css: `
       body { font-family: 'Inter', sans-serif; line-height: 1.5; color: #495057; background-color: #fff; margin: 0; padding: 0; font-weight: 300; }
-      .resume-container { max-width: 800px; margin: auto; padding: 40px; display: block; }
       h1 { font-size: 2em; margin-bottom: 0; color: #212529; font-weight: 500; }
       .main-header p { font-size: 0.9em; margin-top: 5px; color: #6c757d; }
       h2 { font-size: 1.1em; color: #6c757d; border-bottom: 1px solid #dee2e6; padding-bottom: 5px; margin-top: 25px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 500; }
@@ -163,7 +156,6 @@ export const templates: ResumeTemplate[] = [
     },
     css: `
       body { font-family: 'Lora', serif; line-height: 1.6; color: #3d403a; background-color: #fdfdfa; margin: 0; padding: 0; }
-      .resume-container { max-width: 800px; margin: auto; padding: 40px; display: block; }
       h1 { font-size: 2.5em; margin-bottom: 0; color: #556B2F; }
       .main-header p { font-size: 1em; margin-top: 5px; color: #5a5e56; }
       h2 { font-size: 1.3em; color: #556B2F; border-bottom: 1px solid #a3b899; padding-bottom: 5px; margin-top: 25px; margin-bottom: 15px; }
@@ -183,7 +175,6 @@ export const templates: ResumeTemplate[] = [
     },
     css: `
       body { font-family: 'Times New Roman', Times, serif; line-height: 1.5; color: #212121; background-color: #fff; margin: 0; padding: 0; }
-      .resume-container { max-width: 800px; margin: auto; padding: 40px; display: block; }
       h1 { font-size: 2.2em; margin-bottom: 0; color: #0d47a1; }
       .main-header p { font-size: 1em; margin-top: 5px; color: #424242; }
       h2 { font-size: 1.2em; color: #1565c0; border-bottom: 2px solid #1565c0; padding-bottom: 3px; margin-top: 25px; margin-bottom: 15px; font-variant: all-small-caps; }
@@ -203,7 +194,6 @@ export const templates: ResumeTemplate[] = [
     },
     css: `
       body { font-family: 'Calibri', 'Candara', 'Segoe', 'Segoe UI', 'Optima', Arial, sans-serif; line-height: 1.6; color: #5d4037; background-color: #fff; margin: 0; padding: 0; }
-      .resume-container { max-width: 800px; margin: auto; padding: 40px; display: block; }
       h1 { font-size: 2.6em; margin-bottom: 0; color: #8d6e63; font-weight: 300; }
       .main-header p { font-size: 1em; margin-top: 5px; color: #795548; }
       h2 { font-size: 1.4em; color: #b8860b; border-bottom: 1px dashed #b8860b; padding-bottom: 5px; margin-top: 25px; margin-bottom: 15px; }

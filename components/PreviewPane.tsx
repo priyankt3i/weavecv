@@ -1,4 +1,3 @@
-
 import React, { useRef, useState } from 'react';
 import { Icon } from './Icon';
 import type { ResumeTemplate } from '../types';
@@ -20,6 +19,7 @@ const fonts = ["Times New Roman", "Arial", "Calibri", "Cambria", "Georgia"];
 export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoadingReview, isLoadingGeneration, templates, activeTemplate, onSelectTemplate, onSelectFont }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [isLoadingExport, setIsLoadingExport] = useState(false); // New state for export loading
 
   // Comment out the old handleDownloadPdf for now
   // const handleDownloadPdf = () => {
@@ -100,7 +100,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
     }
   };
 
-  const handleExport = (type: 'pdf' | 'image' | 'code') => {
+  const handleExport = async (type: 'pdf' | 'image' | 'code') => { // Made async to await export processes
     setShowExportDropdown(false); // Close dropdown after selection
     if (!html) {
       alert("No resume content to export.");
@@ -116,83 +116,89 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
     const contentDocument = iframe.contentDocument;
     const resumeContent = contentDocument.documentElement;
 
-    switch (type) {
-      case 'pdf':
-        handleDownloadPdfServer(); // Use new server-side PDF logic
-        break;
-      case 'image':
-        // Logic for image export (JPEG)
-        console.log("Attempting JPEG export...");
-        html2pdf().from(resumeContent).set({
-          margin: [5, 5, 5, 5],
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 8,
-            useCORS: true,
-            width: resumeContent.scrollWidth,
-            height: resumeContent.scrollHeight,
-            logging: true
-          }
-        }).output('blob').then((blob: Blob) => {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'resume.jpeg';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          console.log("JPEG export initiated successfully.");
-        }).catch((error: any) => {
-          console.error("Error during JPEG export:", error);
-          alert("Failed to export as JPEG. Check console for details.");
-        });
-        break;
-      case 'code':
-        // Logic for code export (HTML, CSS)
-        const htmlContent = contentDocument.documentElement.outerHTML;
-        const cssContent = Array.from(contentDocument.styleSheets)
-          .map(sheet => {
-            try {
-              return Array.from(sheet.cssRules)
-                .map(rule => rule.cssText)
-                .join('\n');
-            } catch (e) {
-              console.warn("Could not read CSS rules from stylesheet:", e);
-              return '';
+    setIsLoadingExport(true); // Start loading indicator
+
+    try {
+      switch (type) {
+        case 'pdf':
+          await handleDownloadPdfServer(); // Await server-side PDF logic
+          break;
+        case 'image':
+          // Logic for image export (JPEG)
+          console.log("Attempting JPEG export...");
+          await html2pdf().from(resumeContent).set({ // Await html2pdf save
+            margin: [5, 5, 5, 5],
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: {
+              scale: 8,
+              useCORS: true,
+              width: resumeContent.scrollWidth,
+              height: resumeContent.scrollHeight,
+              logging: true
             }
-          })
-          .filter(Boolean)
-          .join('\n\n');
+          }).output('blob').then((blob: Blob) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'resume.jpeg';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            console.log("JPEG export initiated successfully.");
+          });
+          break;
+        case 'code':
+          // Logic for code export (HTML, CSS)
+          const htmlContent = contentDocument.documentElement.outerHTML;
+          const cssContent = Array.from(contentDocument.styleSheets)
+            .map(sheet => {
+              try {
+                return Array.from(sheet.cssRules)
+                  .map(rule => rule.cssText)
+                  .join('\n');
+              } catch (e) {
+                console.warn("Could not read CSS rules from stylesheet:", e);
+                return '';
+              }
+            })
+            .filter(Boolean)
+            .join('\n\n');
 
-        const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
-        const cssBlob = new Blob([cssContent], { type: 'text/css' });
+          const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
+          const cssBlob = new Blob([cssContent], { type: 'text/css' });
 
-        const htmlUrl = URL.createObjectURL(htmlBlob);
-        const cssUrl = URL.createObjectURL(cssBlob);
+          const htmlUrl = URL.createObjectURL(htmlBlob);
+          const cssUrl = URL.createObjectURL(cssBlob);
 
-        const aHtml = document.createElement('a');
-        aHtml.href = htmlUrl;
-        aHtml.download = 'resume.html';
-        document.body.appendChild(aHtml);
-        aHtml.click();
-        document.body.removeChild(aHtml);
-        URL.revokeObjectURL(htmlUrl);
+          const aHtml = document.createElement('a');
+          aHtml.href = htmlUrl;
+          aHtml.download = 'resume.html';
+          document.body.appendChild(aHtml);
+          aHtml.click();
+          document.body.removeChild(aHtml);
+          URL.revokeObjectURL(htmlUrl);
 
-        if (cssContent) {
-          const aCss = document.createElement('a');
-          aCss.href = cssUrl;
-          aCss.download = 'resume.css';
-          document.body.appendChild(aCss);
-          aCss.click();
-          document.body.removeChild(aCss);
-          URL.revokeObjectURL(cssUrl);
-        } else {
-          alert("No external CSS found to export.");
-        }
-        break;
-      default:
-        break;
+          if (cssContent) {
+            const aCss = document.createElement('a');
+            aCss.href = cssUrl;
+            aCss.download = 'resume.css';
+            document.body.appendChild(aCss);
+            aCss.click();
+            document.body.removeChild(aCss);
+            URL.revokeObjectURL(cssUrl);
+          } else {
+            alert("No external CSS found to export.");
+          }
+          break;
+        default:
+          break;
+      }
+    } catch (error) {
+      console.error("Error during export:", error);
+      alert("Failed to export. Check console for details.");
+    } finally {
+      setIsLoadingExport(false); // End loading indicator
     }
   };
   
@@ -216,14 +222,18 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
             <div className="relative">
               <button
                   onClick={() => setShowExportDropdown(!showExportDropdown)}
-                  disabled={!html || isLoadingGeneration}
+                  disabled={!html || isLoadingGeneration || isLoadingExport} // Disable button during export
                   className="flex items-center gap-2 px-3 py-2 text-sm bg-green-500 text-white font-semibold rounded-lg shadow-sm hover:bg-green-600 disabled:bg-green-300 disabled:cursor-not-allowed transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
               >
-                  <Icon name="download" className="w-4 h-4" />
-                  <span>Export</span>
-                  <Icon name="chevron-down" className="w-3 h-3 ml-1" />
+                  {isLoadingExport ? (
+                    <div className="w-4 h-4 border-2 border-t-transparent border-white rounded-full animate-spin"></div>
+                  ) : (
+                    <Icon name="download" className="w-4 h-4" />
+                  )}
+                  <span>{isLoadingExport ? 'Exporting...' : 'Export'}</span>
+                  {!isLoadingExport && <Icon name="chevron-down" className="w-3 h-3 ml-1" />}
               </button>
-              {showExportDropdown && (
+              {showExportDropdown && !isLoadingExport && ( // Hide dropdown during export
                 <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10">
                   <button
                     onClick={() => handleExport('pdf')}
@@ -248,7 +258,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
             </div>
         </div>
       </div>
-      {(html || isLoadingGeneration) && (
+      {(html || isLoadingGeneration || isLoadingExport) && ( // Show loading state for export too
         <div className="px-4 py-3 border-b border-slate-200 space-y-3">
           <div>
             <h3 className="text-sm font-semibold text-slate-600 mb-2">Select a Template:</h3>
@@ -259,7 +269,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
                   <button
                     key={template.id}
                     onClick={() => onSelectTemplate(template)}
-                    disabled={isLoadingGeneration}
+                    disabled={isLoadingGeneration || isLoadingExport} // Disable during export
                     className={`flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed ${
                         isActive 
                         ? 'bg-sky-500 text-white shadow' 
@@ -284,7 +294,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
                 <button
                   key={font}
                   onClick={() => onSelectFont(font)}
-                  disabled={isLoadingGeneration || !html}
+                  disabled={isLoadingGeneration || !html || isLoadingExport} // Disable during export
                   className="px-3 py-1 text-xs font-medium text-slate-700 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   title={`Apply ${font} font`}
                   style={{ fontFamily: font }}
@@ -297,10 +307,10 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
         </div>
       )}
       <div className="flex-grow p-4 overflow-y-auto bg-slate-50">
-        {isLoadingGeneration ? (
+        {isLoadingGeneration || isLoadingExport ? ( // Show loader for generation or export
           <div className="flex flex-col items-center justify-center h-full">
-            <div className="w-8 h-8 border-4 border-t-transparent border-sky-500 rounded-full animate-spin"></div>
-            <p className="mt-4 text-slate-500">Generating Resume...</p>
+            <img src="/loader.gif" alt="Loading..." className="w-48 h-48" /> {/* Loader GIF */}
+            <p className="mt-4 text-slate-500">{isLoadingGeneration ? 'Generating Resume...' : 'Exporting...'}</p>
           </div>
         ) : html ? (
           <iframe

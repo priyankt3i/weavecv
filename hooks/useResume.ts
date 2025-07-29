@@ -55,9 +55,18 @@ export const useResume = () => {
     try {
       const generatedHtmlWithPlaceholders = await generateResume(rawText, activeTemplate.layout);
       
+      const printStyles = `
+@media print {
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+`;
+
       const finalHtml = generatedHtmlWithPlaceholders.replace(
         '/* TEMPLATE_STYLES_HERE */',
-        activeTemplate.css
+        `${activeTemplate.css}\n${printStyles}`
       );
 
       setResumeHtml(finalHtml);
@@ -107,9 +116,17 @@ export const useResume = () => {
       const generatedHtmlWithPlaceholders = await generateResume(rawText, template.layout);
       
       // Step 2: Replace the CSS placeholder in the newly generated HTML with the selected template's CSS.
+      const printStyles = `
+@media print {
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+`;
       const finalHtml = generatedHtmlWithPlaceholders.replace(
         '/* TEMPLATE_STYLES_HERE */',
-        template.css
+        `${template.css}\n${printStyles}`
       );
 
       setResumeHtml(finalHtml);

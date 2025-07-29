@@ -1,21 +1,17 @@
 import puppeteer from 'puppeteer';
 
-export async function generatePdfFromHtml(htmlContent: string): Promise<Uint8Array> {
-  const browser = await puppeteer.launch({ headless: true }); // Ensure headless mode for server
+export async function generatePdfFromUrl(url: string): Promise<Uint8Array> {
+  const browser = await puppeteer.launch({ headless: true }); // Use true for headless mode
   const page = await browser.newPage();
 
-  await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+  await page.goto(url, { waitUntil: 'networkidle0' }); // Load content from URL
   await page.emulateMediaType('print');
 
   const pdfBuffer = await page.pdf({
     format: 'A4',
     printBackground: true,
-    margin: {
-      top: '10mm', // Using mm for consistency with frontend
-      bottom: '10mm',
-      left: '10mm',
-      right: '10mm',
-    },
+    preferCSSPageSize: true, // Honor CSS @page
+    // No margin here if your CSS has it
   });
 
   await browser.close();

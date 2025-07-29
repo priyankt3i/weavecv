@@ -35,7 +35,8 @@ export const generateResume = async (rawText: string, layout: ResumeLayout): Pro
     *   Maintain consistent formatting for dates, titles, and names.
 4.  **Technical HTML & CSS Rules:**
     *   The output MUST be a complete HTML document, starting with \`<!DOCTYPE html>\`.
-    *   ALL CSS MUST be placed within a single \`<style id="resume-style">\` tag in the \`<head>\`. This ID is critical.
+    *   **Google Fonts:** Include Google Fonts using a \`<link>\` tag in the \`<head>\` (e.g., \`<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&family=Prata&display=swap" rel="stylesheet">\`). DO NOT use \`@import\` within the \`<style>\` tag for Google Fonts.
+    *   ALL other CSS MUST be placed within a single \`<style id="resume-style">\` tag in the \`<head>\`. This ID is critical.
     *   Inside the style tag, structure the CSS in this exact order:
         1. The "Crucial Default CSS" for screen display.
         2. A placeholder comment: \`/* TEMPLATE_STYLES_HERE */\`
@@ -78,8 +79,8 @@ body:not(:has(.left-column)) .resume-container { display: block; padding: 40px; 
     background: #fff !important;
     color: #000 !important;
     font-size: 10pt;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .resume-container {
@@ -97,23 +98,25 @@ body:not(:has(.left-column)) .resume-container { display: block; padding: 40px; 
   .resume-container.has-columns {
     display: flex !important;
     flex-direction: row !important;
+    /* Ensure columns take up full width */
+    width: 100% !important;
   }
 
-  .left-column, .right-column {
+  .left-column {
+    width: 35% !important; /* Force width for print */
     padding: 0 !important;
     background: transparent !important; /* Ensure no background color bleeds */
+    box-sizing: border-box; /* Ensure padding is included in width */
+    flex-shrink: 0; /* Prevent shrinking */
   }
 
   .right-column {
-    padding-left: 20px !important;
-    box-sizing: border-box;
+    width: 65% !important; /* Force width for print */
+    padding-left: 20px !important; /* Maintain some spacing */
+    background: transparent !important;
+    box-sizing: border-box; /* Ensure padding is included in width */
   }
   
-  .left-column {
-    /* Prevent shrinking */
-    flex-shrink: 0; 
-  }
-
   section, .job, .education-item {
     page-break-inside: avoid;
   }
@@ -125,6 +128,11 @@ body:not(:has(.left-column)) .resume-container { display: block; padding: 40px; 
   
   ul {
     page-break-inside: avoid;
+    list-style-type: disc !important; /* Ensure bullet points are visible */
+    padding-left: 20px !important; /* Ensure consistent padding for bullets */
+  }
+  li::before {
+    content: none !important; /* Disable custom bullet points in print */
   }
 
   /* Make links visible when printed */
@@ -157,7 +165,12 @@ Your final output must ONLY be the raw HTML string, starting with \`<!DOCTYPE ht
     },
   });
 
-  return cleanupAiResponse(response.text);
+  const responseText = response.text; // Access .text as a property
+  if (responseText === undefined) {
+    console.error("AI response text is undefined for generateResume:", response);
+    throw new Error("AI did not return text content for resume generation.");
+  }
+  return cleanupAiResponse(responseText!); // Use non-null assertion
 };
 
 export const reviewResume = async (resumeHtml: string): Promise<ResumeReview> => {
@@ -216,7 +229,12 @@ export const reviewResume = async (resumeHtml: string): Promise<ResumeReview> =>
   });
 
   try {
-    const jsonText = cleanupAiResponse(response.text);
+    const responseText = response.text;
+    if (responseText === undefined) {
+        console.error("AI response text is undefined for applySuggestion:", response);
+        throw new Error("AI did not return text content for suggestion application.");
+    }
+    const jsonText = cleanupAiResponse(responseText);
     const parsedJson = JSON.parse(jsonText);
     return parsedJson as ResumeReview;
   } catch (e) {
@@ -267,5 +285,10 @@ The user's resume preview breaks if you provide invalid HTML. Your primary goal 
         }
     });
 
-    return cleanupAiResponse(response.text);
+    const responseText = response.text; // Access .text as a property
+    if (responseText === undefined) {
+        console.error("AI response text is undefined for applySuggestion:", response);
+        throw new Error("AI did not return text content for suggestion application.");
+    }
+    return cleanupAiResponse(responseText!); // Use non-null assertion
 };
