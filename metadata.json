@@ -1,0 +1,6 @@
+{
+  "name": "WeaveCV",
+  "description": "WeaveCV is an intelligent resume builder that uses AI to format, review, and score your resume for ATS compliance. Paste your text, get a beautifully formatted resume, and receive AI-powered suggestions to land your dream job.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
