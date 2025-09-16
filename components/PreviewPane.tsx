@@ -1,7 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Icon } from './Icon';
 import type { ResumeTemplate } from '../types';
-import html2pdf from 'html2pdf.js';
 
 interface PreviewPaneProps {
   html: string;
@@ -72,7 +71,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
     }
 
     try {
-      const response = await fetch('http://localhost:3001/generate-pdf', {
+      const response = await fetch('/api/generate-pdf', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -86,14 +85,8 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'resume.pdf';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      console.log("PDF generated and downloaded successfully via server.");
+      window.open(url, '_blank');
+      console.log("PDF opened in new tab successfully via server.");
     } catch (error) {
       console.error("Error generating PDF via server:", error);
       alert("Failed to generate PDF via server. Check console for details.");
@@ -126,17 +119,20 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
         case 'image':
           // Logic for image export (JPEG)
           console.log("Attempting JPEG export...");
-          await html2pdf().from(resumeContent).set({ // Await html2pdf save
-            margin: [5, 5, 5, 5],
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: {
-              scale: 8,
-              useCORS: true,
-              width: resumeContent.scrollWidth,
-              height: resumeContent.scrollHeight,
-              logging: true
+          try {
+            const response = await fetch('/api/generate-jpeg', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ htmlContent: html }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
             }
-          }).output('blob').then((blob: Blob) => {
+
+            const blob = await response.blob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -146,7 +142,10 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             console.log("JPEG export initiated successfully.");
-          });
+          } catch (error) {
+            console.error("Error generating JPEG via server:", error);
+            alert("Failed to generate JPEG via server. Check console for details.");
+          }
           break;
         case 'code':
           // Logic for code export (HTML, CSS)

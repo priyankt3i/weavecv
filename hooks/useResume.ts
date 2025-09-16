@@ -1,5 +1,5 @@
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { ResumeReview, ResumeTemplate, Suggestion } from '../types';
 import { generateResume, reviewResume, applySuggestion } from '../services/geminiService';
 import { templates } from '../components/templates/templates';
@@ -35,14 +35,33 @@ Cloud/DevOps: AWS, Docker, Kubernetes, CI/CD
 
 
 export const useResume = () => {
-  const [rawText, setRawText] = useState<string>(initialRawText);
-  const [resumeHtml, setResumeHtml] = useState<string>('');
-  const [review, setReview] = useState<ResumeReview | null>(null);
+  const [rawText, setRawText] = useState<string>(() => sessionStorage.getItem('rawText') || initialRawText);
+  const [resumeHtml, setResumeHtml] = useState<string>(() => sessionStorage.getItem('resumeHtml') || '');
+  const [review, setReview] = useState<ResumeReview | null>(() => {
+    const savedReview = sessionStorage.getItem('review');
+    return savedReview ? JSON.parse(savedReview) : null;
+  });
   const [isLoadingGeneration, setIsLoadingGeneration] = useState<boolean>(false);
   const [isLoadingReview, setIsLoadingReview] = useState<boolean>(false);
   const [isLoadingApply, setIsLoadingApply] = useState<boolean>(false);
   const [activeSuggestion, setActiveSuggestion] = useState<Suggestion | null>(null);
   const [activeTemplate, setActiveTemplate] = useState<ResumeTemplate>(templates[0]);
+
+  useEffect(() => {
+    sessionStorage.setItem('rawText', rawText);
+  }, [rawText]);
+
+  useEffect(() => {
+    sessionStorage.setItem('resumeHtml', resumeHtml);
+  }, [resumeHtml]);
+
+  useEffect(() => {
+    if (review) {
+      sessionStorage.setItem('review', JSON.stringify(review));
+    } else {
+      sessionStorage.removeItem('review');
+    }
+  }, [review]);
 
   const handleGenerateResume = useCallback(async () => {
     if (!rawText.trim()) {

@@ -11,8 +11,9 @@
   },
   "dependencies": {
     "@google/genai": "^1.11.0",
+    "@sparticuz/chromium": "^138.0.2",
     "cors": "^2.8.5",
-    "html2pdf.js": "^0.10.3",
+    "puppeteer-core": "^24.21.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
@@ -23,9 +24,9 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.9",
+    "@vercel/node": "^5.3.22",
     "body-parser": "^2.2.0",
     "express": "^5.1.0",
-    "puppeteer": "^24.15.0",
     "ts-node": "^10.9.2",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
