@@ -1,11 +1,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { ResumeReview, Suggestion, ResumeLayout } from '../types';
 
-if (!import.meta.env.VITE_GEMINI_API_KEY) {
+if (!process.env.GEMINI_API_KEY) {
     throw new Error("API_KEY environment variable is not set.");
 }
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const model = 'gemini-2.5-flash';
 
 /**
