@@ -29,6 +29,7 @@
     "@vercel/node": "^5.3.22",
     "body-parser": "^2.2.0",
     "express": "^5.1.0",
+    "msw": "^2.10.5",
     "ts-node": "^10.9.2",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"

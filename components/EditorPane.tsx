@@ -12,7 +12,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({ rawText, setRawText, onG
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-sm">
       <div className="p-4 border-b border-slate-200">
-        <h2 className="text-lg font-semibold text-slate-700">1. Paste Your Resume Text</h2>
+        <h2 className="text-lg font-semibold text-slate-700">Paste Your Resume Text</h2>
         <p className="text-sm text-slate-500">Enter your existing resume content below.</p>
       </div>
       <div className="flex-grow p-1 min-h-0">
