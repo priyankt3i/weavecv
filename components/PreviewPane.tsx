@@ -100,15 +100,6 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
       return;
     }
 
-    const iframe = iframeRef.current;
-    if (!iframe || !iframe.contentWindow || !iframe.contentDocument) {
-      alert("Could not find resume content to export.");
-      return;
-    }
-
-    const contentDocument = iframe.contentDocument;
-    const resumeContent = contentDocument.documentElement;
-
     setIsLoadingExport(true); // Start loading indicator
 
     try {
@@ -149,20 +140,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
           break;
         case 'code':
           // Logic for code export (HTML, CSS)
-          const htmlContent = contentDocument.documentElement.outerHTML;
-          const cssContent = Array.from(contentDocument.styleSheets)
-            .map(sheet => {
-              try {
-                return Array.from(sheet.cssRules)
-                  .map(rule => rule.cssText)
-                  .join('\n');
-              } catch (e) {
-                console.warn("Could not read CSS rules from stylesheet:", e);
-                return '';
-              }
-            })
-            .filter(Boolean)
-            .join('\n\n');
+          const parsedDoc = new DOMParser().parseFromString(html, 'text/html');
+          const htmlContent = parsedDoc.documentElement.outerHTML;
+          const cssContent = parsedDoc.querySelector('style#resume-style')?.textContent?.trim() || '';
 
           const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
           const cssBlob = new Blob([cssContent], { type: 'text/css' });

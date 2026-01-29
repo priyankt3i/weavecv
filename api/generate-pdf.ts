@@ -1,8 +1,8 @@
 import puppeteer from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { enforceRateLimit } from './_rateLimit';
-import { sanitizeHtml } from './_sanitize';
+import { enforceRateLimit } from './_rateLimit.js';
+import { sanitizeHtml } from './_sanitize.js';
 
 const MAX_HTML = 400000;
 

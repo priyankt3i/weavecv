@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { ResumeReview, Suggestion, ResumeLayout } from '../types';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { enforceRateLimit } from "./_rateLimit";
-import { sanitizeHtml } from "./_sanitize";
+import { enforceRateLimit } from "./_rateLimit.js";
+import { sanitizeHtml } from "./_sanitize.js";
 
 const model = 'gemini-2.5-flash';
 let ai: GoogleGenAI | null = null;
