@@ -1,13 +1,21 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { ResumeReview, Suggestion, ResumeLayout } from '../types';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { enforceRateLimit } from "./_rateLimit";
+import { sanitizeHtml } from "./_sanitize";
 
-if (!process.env.GEMINI_API_KEY) {
-    throw new Error("API_KEY environment variable is not set.");
-}
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const model = 'gemini-2.5-flash';
+let ai: GoogleGenAI | null = null;
+
+const getAi = () => {
+  if (!ai) {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY environment variable is not set.");
+    }
+    ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  }
+  return ai;
+};
 
 /**
  * Cleans up the AI's response by removing markdown code fences.
@@ -20,6 +28,37 @@ const cleanupAiResponse = (responseText: string): string => {
   return cleanedText;
 };
 
+const MAX_RAW_TEXT = 20000;
+const MAX_HTML = 400000;
+const MAX_USER_INPUT = 4000;
+
+const isNonEmptyString = (value: unknown, maxLen?: number): value is string => {
+  return typeof value === 'string' && value.trim().length > 0 && (!maxLen || value.length <= maxLen);
+};
+
+const isStringArray = (value: unknown): value is string[] => {
+  return Array.isArray(value) && value.length > 0 && value.every(item => typeof item === 'string');
+};
+
+const isResumeLayout = (value: unknown): value is ResumeLayout => {
+  if (!value || typeof value !== 'object') return false;
+  const layout = value as ResumeLayout;
+  if (layout.type !== 'single-column' && layout.type !== 'two-column') return false;
+  if (layout.type === 'single-column') {
+    return isStringArray(layout.order);
+  }
+  return isStringArray(layout.primary) && isStringArray(layout.secondary);
+};
+
+const isSuggestion = (value: unknown): value is Suggestion => {
+  if (!value || typeof value !== 'object') return false;
+  const suggestion = value as Suggestion;
+  return (
+    typeof suggestion.id === 'string' &&
+    typeof suggestion.title === 'string' &&
+    typeof suggestion.description === 'string'
+  );
+};
 
 export const generateResume = async (rawText: string, layout: ResumeLayout): Promise<string> => {
   const systemInstruction = `You are an expert resume creator and HTML generator. Your task is to convert raw text into a single, self-contained, professional HTML document that is both beautiful on screen and perfectly formatted for printing as a PDF.
@@ -158,7 +197,7 @@ Your final output must ONLY be the raw HTML string, starting with \`<!DOCTYPE ht
     \`\`\`
   `;
 
-  const response = await ai.models.generateContent({
+  const response = await getAi().models.generateContent({
     model: model,
     contents: contents,
     config: {
@@ -219,7 +258,7 @@ export const reviewResume = async (resumeHtml: string): Promise<ResumeReview> =>
     required: ["score", "suggestions"],
   };
 
-  const response = await ai.models.generateContent({
+  const response = await getAi().models.generateContent({
     model: model,
     contents: `Please review the following resume's text content (ignore the HTML tags, focus on the text):\n\n${resumeHtml}`,
     config: {
@@ -278,7 +317,7 @@ The user's resume preview breaks if you provide invalid HTML. Your primary goal 
     Please provide the full, updated resume HTML with this change applied. Remember to follow all editing rules to ensure the HTML is valid.
     `;
 
-    const response = await ai.models.generateContent({
+    const response = await getAi().models.generateContent({
         model: model,
         contents: contents,
         config: {
@@ -295,23 +334,48 @@ The user's resume preview breaks if you provide invalid HTML. Your primary goal 
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const allowed = await enforceRateLimit(req, res, { prefix: "gemini", limit: 10, window: "1 m" });
+  if (!allowed) return;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { action, rawText, layout, resumeHtml, suggestion, userInput } = req.body;
+  const body = req.body ?? {};
+  const { action, rawText, layout, resumeHtml, suggestion, userInput } = body;
 
   try {
     switch (action) {
-      case 'generate':
+      case 'generate': {
+        if (!isNonEmptyString(rawText, MAX_RAW_TEXT) || !isResumeLayout(layout)) {
+          return res.status(400).json({ error: 'Invalid generate request.' });
+        }
         const generatedHtml = await generateResume(rawText, layout);
-        return res.status(200).send(generatedHtml);
-      case 'review':
-        const review = await reviewResume(resumeHtml);
+        const safeHtml = sanitizeHtml(generatedHtml);
+        return res.status(200).send(safeHtml);
+      }
+      case 'review': {
+        if (!isNonEmptyString(resumeHtml, MAX_HTML)) {
+          return res.status(400).json({ error: 'Invalid review request.' });
+        }
+        const safeHtml = sanitizeHtml(resumeHtml);
+        const review = await reviewResume(safeHtml);
         return res.status(200).json(review);
-      case 'apply':
-        const appliedHtml = await applySuggestion(resumeHtml, suggestion, userInput);
-        return res.status(200).send(appliedHtml);
+      }
+      case 'apply': {
+        if (
+          !isNonEmptyString(resumeHtml, MAX_HTML) ||
+          !isSuggestion(suggestion) ||
+          (userInput !== undefined && typeof userInput !== 'string') ||
+          (typeof userInput === 'string' && userInput.length > MAX_USER_INPUT)
+        ) {
+          return res.status(400).json({ error: 'Invalid apply request.' });
+        }
+        const safeHtml = sanitizeHtml(resumeHtml);
+        const appliedHtml = await applySuggestion(safeHtml, suggestion, userInput || '');
+        const safeAppliedHtml = sanitizeHtml(appliedHtml);
+        return res.status(200).send(safeAppliedHtml);
+      }
       default:
         return res.status(400).json({ error: 'Invalid action' });
     }

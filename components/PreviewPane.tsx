@@ -316,6 +316,8 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
             ref={iframeRef}
             srcDoc={html}
             title="Resume Preview"
+            sandbox=""
+            referrerPolicy="no-referrer"
             className="w-full h-full bg-white border-0 rounded-md shadow-inner"
           />
         ) : (

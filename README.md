@@ -38,12 +38,19 @@ To get WeaveCV up and running on your local machine, follow these steps:
 
 ### Configuration
 
-1.  **Set your Gemini API Key:**
+1.  **Set your Gemini API Key (server-only):**
     Create a `.env` file in the root directory of the project if it doesn't exist, and add your Gemini API key:
     ```
-    VITE_GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
+    GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
     ```
     Replace `YOUR_GEMINI_API_KEY_HERE` with your actual Gemini API key.
+
+2.  **Set Upstash Redis credentials for rate limiting:**
+    ```
+    UPSTASH_REDIS_REST_URL=YOUR_UPSTASH_REDIS_REST_URL
+    UPSTASH_REDIS_REST_TOKEN=YOUR_UPSTASH_REDIS_REST_TOKEN
+    ```
+    These are required in production so rate limiting works across regions.
 
 ### Running the Application
 
