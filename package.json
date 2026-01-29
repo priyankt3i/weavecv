@@ -12,6 +12,8 @@
   "dependencies": {
     "@google/genai": "^1.11.0",
     "@sparticuz/chromium": "^138.0.2",
+    "@upstash/ratelimit": "^2.0.6",
+    "@upstash/redis": "^1.34.0",
     "cors": "^2.8.5",
     "puppeteer-core": "^24.21.0",
     "react": "^19.1.1",
@@ -27,8 +29,14 @@
     "@vercel/node": "^5.3.22",
     "body-parser": "^2.2.0",
     "express": "^5.1.0",
+    "msw": "^2.10.5",
     "ts-node": "^10.9.2",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }

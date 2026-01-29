@@ -38,12 +38,19 @@ To get WeaveCV up and running on your local machine, follow these steps:
 
 ### Configuration
 
-1.  **Set your Gemini API Key:**
+1.  **Set your Gemini API Key (server-only):**
     Create a `.env` file in the root directory of the project if it doesn't exist, and add your Gemini API key:
     ```
-    VITE_GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
+    GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
     ```
     Replace `YOUR_GEMINI_API_KEY_HERE` with your actual Gemini API key.
+
+2.  **Set Upstash Redis credentials for rate limiting:**
+    ```
+    UPSTASH_REDIS_REST_URL=YOUR_UPSTASH_REDIS_REST_URL
+    UPSTASH_REDIS_REST_TOKEN=YOUR_UPSTASH_REDIS_REST_TOKEN
+    ```
+    These are required in production so rate limiting works across regions.
 
 ### Running the Application
 
@@ -67,3 +74,18 @@ WeaveCV consists of two main parts: the frontend (React app) and a backend serve
     Open your web browser and navigate to the address provided by the `npm run dev` command (e.g., `http://localhost:5173`).
 
 You should now be able to use the WeaveCV application, including the "Export" functionality for PDF, JPEG, and HTML/CSS.
+
+### Mocking API Calls (MSW)
+
+For local development with `npm run dev`, the app can mock `/api/*` calls with MSW. This is enabled by default via `.env.development`.
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Generate the service worker file:
+   ```bash
+   npx msw init public/
+   ```
+
+When running `vercel dev`, MSW is disabled and real serverless endpoints are used.

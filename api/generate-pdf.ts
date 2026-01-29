@@ -1,6 +1,10 @@
 import puppeteer from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { enforceRateLimit } from './_rateLimit';
+import { sanitizeHtml } from './_sanitize';
+
+const MAX_HTML = 400000;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -9,10 +13,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { htmlContent } = req.body;
 
-  if (!htmlContent) {
-    return res.status(400).send('HTML content is required.');
+  const allowed = await enforceRateLimit(req, res, { prefix: "generate-pdf", limit: 5, window: "1 m" });
+  if (!allowed) return;
+
+  if (typeof htmlContent !== 'string' || htmlContent.trim().length === 0 || htmlContent.length > MAX_HTML) {
+    return res.status(400).send('Valid HTML content is required.');
   }
 
+  const safeHtml = sanitizeHtml(htmlContent);
   let browser = null;
 
   try {
@@ -24,7 +32,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const page = await browser.newPage();
 
-    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+    await page.setContent(safeHtml, { waitUntil: 'networkidle0', timeout: 15000 });
     await page.emulateMediaType('print');
 
     // Add a small delay to ensure all rendering is complete

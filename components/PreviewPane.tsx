@@ -204,7 +204,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-sm">
       <div className="flex items-center justify-between p-4 border-b border-slate-200">
-        <h2 className="text-lg font-semibold text-slate-700">2. Preview & Edit</h2>
+        <h2 className="text-lg font-semibold text-slate-700">Preview & Edit</h2>
         <div className="flex items-center gap-2">
             <button
                 onClick={onReview}
@@ -316,6 +316,8 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ html, onReview, isLoad
             ref={iframeRef}
             srcDoc={html}
             title="Resume Preview"
+            sandbox=""
+            referrerPolicy="no-referrer"
             className="w-full h-full bg-white border-0 rounded-md shadow-inner"
           />
         ) : (
