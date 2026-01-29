@@ -74,3 +74,18 @@ WeaveCV consists of two main parts: the frontend (React app) and a backend serve
     Open your web browser and navigate to the address provided by the `npm run dev` command (e.g., `http://localhost:5173`).
 
 You should now be able to use the WeaveCV application, including the "Export" functionality for PDF, JPEG, and HTML/CSS.
+
+### Mocking API Calls (MSW)
+
+For local development with `npm run dev`, the app can mock `/api/*` calls with MSW. This is enabled by default via `.env.development`.
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Generate the service worker file:
+   ```bash
+   npx msw init public/
+   ```
+
+When running `vercel dev`, MSW is disabled and real serverless endpoints are used.
