@@ -1,10 +1,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { ResumeReview, Suggestion, ResumeLayout } from '../types';
-import type { VercelRequest, VercelResponse } from './_vercelTypes.js';
+import type { DraftRevisionDecision, DraftRevisionResult, ResumeReview, ResumeTemplate, Suggestion } from "../types";
+import type { VercelRequest, VercelResponse } from "./_vercelTypes.js";
 import { enforceRateLimit } from "./_rateLimit.js";
-import { sanitizeHtml } from "./_sanitize.js";
 
-const model = 'gemini-2.5-flash';
+const model = "gemini-2.5-flash";
 let ai: GoogleGenAI | null = null;
 
 const getAi = () => {
@@ -17,219 +16,271 @@ const getAi = () => {
   return ai;
 };
 
-/**
- * Cleans up the AI's response by removing markdown code fences.
- * @param responseText The raw text from the AI response.
- * @returns The cleaned text, free of code fences.
- */
 const cleanupAiResponse = (responseText: string): string => {
-  // Regex to find ```html, ```json, or just ``` at the start and ``` at the end.
-  const cleanedText = responseText.trim().replace(/^```(?:\w+)?\s*\n/, '').replace(/\n```$/, '').trim();
-  return cleanedText;
+  return responseText
+    .trim()
+    .replace(/^```(?:\w+)?\s*\n/, "")
+    .replace(/\n```$/, "")
+    .trim();
 };
 
 const MAX_RAW_TEXT = 20000;
-const MAX_HTML = 400000;
+const MAX_MARKDOWN = 50000;
 const MAX_USER_INPUT = 4000;
+const MAX_JOB_DESCRIPTION = 12000;
+const MAX_TEMPLATE_HTML = 120000;
+const IMPORTED_TEMPLATE_VERSION = 2;
 
 const isNonEmptyString = (value: unknown, maxLen?: number): value is string => {
-  return typeof value === 'string' && value.trim().length > 0 && (!maxLen || value.length <= maxLen);
-};
-
-const isStringArray = (value: unknown): value is string[] => {
-  return Array.isArray(value) && value.length > 0 && value.every(item => typeof item === 'string');
-};
-
-const isResumeLayout = (value: unknown): value is ResumeLayout => {
-  if (!value || typeof value !== 'object') return false;
-  const layout = value as ResumeLayout;
-  if (layout.type !== 'single-column' && layout.type !== 'two-column') return false;
-  if (layout.type === 'single-column') {
-    return isStringArray(layout.order);
-  }
-  return isStringArray(layout.primary) && isStringArray(layout.secondary);
+  return typeof value === "string" && value.trim().length > 0 && (!maxLen || value.length <= maxLen);
 };
 
 const isSuggestion = (value: unknown): value is Suggestion => {
-  if (!value || typeof value !== 'object') return false;
+  if (!value || typeof value !== "object") return false;
   const suggestion = value as Suggestion;
   return (
-    typeof suggestion.id === 'string' &&
-    typeof suggestion.title === 'string' &&
-    typeof suggestion.description === 'string'
+    typeof suggestion.id === "string" &&
+    typeof suggestion.title === "string" &&
+    typeof suggestion.description === "string"
   );
 };
 
-export const generateResume = async (rawText: string, layout: ResumeLayout): Promise<string> => {
-  const systemInstruction = `You are an expert resume creator and HTML generator. Your task is to convert raw text into a single, self-contained, professional HTML document that is both beautiful on screen and perfectly formatted for printing as a PDF.
+const isDraftRevisionDecision = (value: unknown): value is DraftRevisionDecision => {
+  return value === "applied" || value === "needs_confirmation" || value === "blocked";
+};
 
-**Your Instructions:**
-1.  **Follow the Layout Exactly:** You will be given a JSON \`Layout Configuration\`. You MUST adhere to this configuration without deviation.
-    *   If the layout configuration's \`type\` is \`two-column\`, you MUST add the class \`"has-columns"\` to the \`resume-container\` div (e.g., \`<div class="resume-container has-columns">\`).
-2.  **HTML Structure:**
-    *   If \`layout.type\` is \`two-column\`, you MUST generate a container with \`<div class="left-column">\` and \`<div class="right-column">\`. Sections from \`layout.primary\` go right, and \`layout.secondary\` go left, in order.
-    *   If \`layout.type\` is \`single-column\`, you MUST NOT use column divs. All sections MUST be direct children of the main container, in the order specified by \`layout.order\`.
-3.  **Content Formatting:**
-    *   Begin bullet points in 'Work Experience' and 'Projects' with strong action verbs.
-    *   Use numbers and metrics to quantify achievements where possible.
-    *   Maintain consistent formatting for dates, titles, and names.
-4.  **Technical HTML & CSS Rules:**
-    *   The output MUST be a complete HTML document, starting with \`<!DOCTYPE html>\`.
-    *   **Google Fonts:** Include Google Fonts using a \`<link>\` tag in the \`<head>\` (e.g., \`<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&family=Prata&display=swap" rel="stylesheet">\`). DO NOT use \`@import\` within the \`<style>\` tag for Google Fonts.
-    *   ALL other CSS MUST be placed within a single \`<style id="resume-style">\` tag in the \`<head>\`. This ID is critical.
-    *   Inside the style tag, structure the CSS in this exact order:
-        1. The "Crucial Default CSS" for screen display.
-        2. A placeholder comment: \`/* TEMPLATE_STYLES_HERE */\`
-        3. The "Crucial Print CSS" for PDF generation.
+const slugify = (value: string): string => {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48) || "imported-template";
+};
 
-**Crucial Default CSS (for screen display):**
-\`\`\`css
-body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; margin: 0; padding: 0; }
-.resume-container { display: flex; max-width: 1000px; margin: 20px auto; background-color: #fff; box-shadow: 0 0 15px rgba(0,0,0,0.1); min-height: 95vh; }
-.left-column { width: 35%; padding: 30px; box-sizing: border-box; }
-.right-column { width: 65%; padding: 30px; box-sizing: border-box; }
-.profile-pic { width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin: 0 auto 20px; display: block; }
-.main-header { text-align: left; margin-bottom: 30px; }
-.main-header h1 { font-size: 2.8em; margin-bottom: 0; color: #111; }
-.main-header h3 { font-size: 1.2em; color: #555; margin-top: 5px; font-weight: normal; }
-section { margin-bottom: 25px; }
-h2 { font-size: 1.4em; color: #333; border-bottom: 2px solid #eee; padding-bottom: 5px; margin-top: 0; margin-bottom: 20px; }
-.contact-info p, .education-item p, .certifications-item p { margin: 5px 0; }
-.job { margin-bottom: 20px; }
-.job-header { margin-bottom: 5px; }
-.job-header h3 { font-weight: bold; font-size: 1.1em; }
-.job-header p { font-style: italic; color: #444; }
-.job ul, .skills ul { list-style-type: disc; padding-left: 20px; margin-top: 5px; }
-body:not(:has(.left-column)) .resume-container { display: block; padding: 40px; }
-\`\`\`
+const sanitizeTemplateCss = (css: string): string => {
+  return css
+    .replace(/<\/?style[^>]*>/gi, "")
+    .replace(/@import[^;]+;/gi, "")
+    .replace(/url\([^)]*\)/gi, "none")
+    .replace(/expression\s*\([^)]*\)/gi, "")
+    .trim();
+};
 
-/* TEMPLATE_STYLES_HERE */
+const isTemplateLike = (value: unknown): value is Omit<ResumeTemplate, "id" | "source"> => {
+  if (!value || typeof value !== "object") return false;
+  const template = value as ResumeTemplate;
+  if (typeof template.name !== "string" || typeof template.thumbnailColor !== "string" || typeof template.css !== "string") {
+    return false;
+  }
+  if (!template.layout || typeof template.layout !== "object") return false;
+  if (template.layout.type === "single-column") {
+    return Array.isArray(template.layout.order);
+  }
+  if (template.layout.type === "two-column") {
+    return Array.isArray(template.layout.primary) && Array.isArray(template.layout.secondary);
+  }
+  return false;
+};
 
-**Crucial Print CSS (MUST be included for PDF generation):**
-\`\`\`css
-@media print {
-  @page {
-    size: A4;
-    margin: 2.54cm; /* 1 inch */
+const monthIndexByName: Record<string, number> = {
+  jan: 1,
+  january: 1,
+  feb: 2,
+  february: 2,
+  mar: 3,
+  march: 3,
+  apr: 4,
+  april: 4,
+  may: 5,
+  jun: 6,
+  june: 6,
+  jul: 7,
+  july: 7,
+  aug: 8,
+  august: 8,
+  sep: 9,
+  sept: 9,
+  september: 9,
+  oct: 10,
+  october: 10,
+  nov: 11,
+  november: 11,
+  dec: 12,
+  december: 12,
+};
+
+const getCurrentDateContext = () => {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(now);
+
+  const year = Number(parts.find((part) => part.type === "year")?.value || now.getFullYear());
+  const month = Number(parts.find((part) => part.type === "month")?.value || now.getMonth() + 1);
+  const day = Number(parts.find((part) => part.type === "day")?.value || now.getDate());
+  const display = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(now);
+
+  return {
+    year,
+    month,
+    day,
+    display,
+    iso: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+  };
+};
+
+const parseMonthYearMentions = (value: string): { month: number; year: number }[] => {
+  const mentions: { month: number; year: number }[] = [];
+  const monthYearPattern =
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?[\s,]+((?:19|20)\d{2})\b/gi;
+  const numericMonthYearPattern = /\b(0?[1-9]|1[0-2])\s*[/-]\s*((?:19|20)\d{2})\b/g;
+
+  for (const match of value.matchAll(monthYearPattern)) {
+    const month = monthIndexByName[match[1].toLowerCase().replace(/\.$/, "")];
+    const year = Number(match[2]);
+    if (month && Number.isFinite(year)) {
+      mentions.push({ month, year });
+    }
   }
 
-  html, body {
-    width: 100%;
-    height: auto;
-    background: #fff !important;
-    color: #000 !important;
-    font-size: 10pt;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
+  for (const match of value.matchAll(numericMonthYearPattern)) {
+    const month = Number(match[1]);
+    const year = Number(match[2]);
+    if (month >= 1 && month <= 12 && Number.isFinite(year)) {
+      mentions.push({ month, year });
+    }
   }
 
-  .resume-container {
-    max-width: 100% !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    background: #fff !important;
-    display: block; /* Default to block for print flow */
+  return mentions;
+};
+
+const isMonthYearAfterCurrent = (
+  mention: { month: number; year: number },
+  currentDate: { month: number; year: number }
+): boolean => {
+  return mention.year > currentDate.year || (mention.year === currentDate.year && mention.month > currentDate.month);
+};
+
+const isFalseFutureDateSuggestion = (
+  suggestion: Suggestion,
+  currentDate: { month: number; year: number }
+): boolean => {
+  const suggestionText = `${suggestion.title} ${suggestion.description} ${suggestion.originalText || ""}`;
+  if (!/\bfuture\b|\bfuture-dated\b|\bfuture dated\b/i.test(suggestionText)) {
+    return false;
   }
 
-  /* Retain flex for two-column layouts in print */
-  .resume-container.has-columns {
-    display: flex !important;
-    flex-direction: row !important;
-    /* Ensure columns take up full width */
-    width: 100% !important;
+  const citedDateText = suggestion.originalText || suggestionText;
+  const monthYearMentions = parseMonthYearMentions(citedDateText);
+  if (monthYearMentions.length === 0) {
+    return false;
   }
 
-  .left-column {
-    width: 35% !important; /* Force width for print */
-    padding: 0 !important;
-    background: transparent !important; /* Ensure no background color bleeds */
-    box-sizing: border-box; /* Ensure padding is included in width */
-    flex-shrink: 0; /* Prevent shrinking */
-  }
+  return monthYearMentions.every((mention) => !isMonthYearAfterCurrent(mention, currentDate));
+};
 
-  .right-column {
-    width: 65% !important; /* Force width for print */
-    padding-left: 20px !important; /* Maintain some spacing */
-    background: transparent !important;
-    box-sizing: border-box; /* Ensure padding is included in width */
-  }
-  
-  section, .job, .education-item {
-    page-break-inside: avoid;
-  }
+const removeFalseFutureDateSuggestions = (review: ResumeReview): ResumeReview => {
+  const currentDate = getCurrentDateContext();
+  return {
+    ...review,
+    suggestions: review.suggestions.filter((suggestion) => !isFalseFutureDateSuggestion(suggestion, currentDate)),
+  };
+};
 
-  h1, h2, h3 {
-    page-break-after: avoid;
-    page-break-inside: avoid;
-  }
-  
-  ul {
-    page-break-inside: avoid;
-    list-style-type: disc !important; /* Ensure bullet points are visible */
-    padding-left: 20px !important; /* Ensure consistent padding for bullets */
-  }
-  li::before {
-    content: none !important; /* Disable custom bullet points in print */
-  }
+export const generateResumeMarkdown = async (
+  rawText: string,
+  jobDescription?: string
+): Promise<string> => {
+  const systemInstruction = `You are an expert resume writer. Convert the user's raw resume notes into polished resume content in clean Markdown.
 
-  /* Make links visible when printed */
-  a {
-    color: #000 !important;
-    text-decoration: none !important; /* Resumes often don't underline links in print */
-  }
-}
-\`\`\`
+Return only Markdown. Do not return HTML. Do not wrap the result in code fences.
 
-Your final output must ONLY be the raw HTML string, starting with \`<!DOCTYPE html>\`. Do not add any explanatory text.`;
+Use this structure exactly when information is available:
 
-  const contents = `
-    Please format the following resume content into a self-contained HTML document.
+# Candidate Name
+**Target Role**
+Location | Email | Phone | LinkedIn | Portfolio
 
-    **Resume Text:**
-    ${rawText}
+## Professional Summary
+One concise paragraph focused on impact and fit.
 
-    **Layout Configuration (MUST be followed exactly):**
-    \`\`\`json
-    ${JSON.stringify(layout, null, 2)}
-    \`\`\`
-  `;
+## Skills
+- Category: Skill, Skill, Skill
+
+## Work Experience
+### Company | Job Title | Dates
+- Achievement bullet with concrete action, scope, tools, and measurable result.
+
+## Projects
+### Project Name | Context or Stack | Dates
+- Achievement bullet with measurable outcome.
+
+## Education
+### School | Degree | Dates
+- Optional detail.
+
+## Certifications
+- Certification, Issuer, Year
+
+Rules:
+- Preserve facts from the user's source. Do not invent employers, degrees, numbers, certifications, or dates.
+- Improve wording, order, and clarity.
+- If a job description is provided, tune the summary, skills, and bullets toward that role while staying truthful.
+- Prefer ATS-friendly wording and common industry capitalization.
+- Keep bullets concise and accomplishment-oriented.`;
+
+  const contents = [
+    "Raw resume notes:",
+    rawText,
+    jobDescription?.trim()
+      ? `\nJob description to tune for:\n${jobDescription}`
+      : "\nNo job description was provided.",
+  ].join("\n\n");
 
   const response = await getAi().models.generateContent({
-    model: model,
-    contents: contents,
+    model,
+    contents,
     config: {
       systemInstruction,
     },
   });
 
-  const responseText = response.text; // Access .text as a property
-  if (responseText === undefined) {
-    console.error("AI response text is undefined for generateResume:", response);
+  if (response.text === undefined) {
+    console.error("AI response text is undefined for resume generation:", response);
     throw new Error("AI did not return text content for resume generation.");
   }
-  return cleanupAiResponse(responseText!); // Use non-null assertion
+
+  return cleanupAiResponse(response.text);
 };
 
-export const reviewResume = async (resumeHtml: string): Promise<ResumeReview> => {
-  const systemInstruction = `You are an expert ATS resume reviewer. Analyze the provided resume HTML.
-  Your task is to provide a score and a list of actionable suggestions.
+export const reviewResumeMarkdown = async (resumeMarkdown: string): Promise<ResumeReview> => {
+  const currentDate = getCurrentDateContext();
+  const systemInstruction = `You are an expert ATS resume reviewer. Analyze the provided resume Markdown.
 
-  **Review Criteria:**
-  1.  **Score:** Provide a score from 0 to 100 for ATS compatibility and overall impact.
-  2.  **Actionable Suggestions:** Give a list of specific, actionable suggestions. For each, provide a clear title and a detailed description of WHAT the user needs to provide to fix it.
-  3.  **Contextual Analysis:** If a suggestion applies to a specific piece of text, include that original text.
-  4.  **Spelling, Grammar, and Formatting Check:**
-      *   Perform a comprehensive spelling and grammar check.
-      *   **CRITICAL:** Be context-aware. Based on the candidate's professional role and skills mentioned, you MUST correctly identify technical terms, frameworks, and product names (e.g., nodejs, react, mongodb, jira, gcp, aws, postgresql).
-      *   **DO NOT** flag these as simple misspellings.
-      *   **INSTEAD**, create a suggestion to correct their capitalization or formatting to the industry-standard form (e.g., 'nodejs' -> 'Node.js', 'react' -> 'React', 'Postgresql' -> 'PostgreSQL', 'aws' -> 'AWS').
-      *   For these formatting corrections, set the \`isCorrection\` flag to \`true\`. The user will not need to provide input for these.
-  5.  **Dynamic Placeholders:** For suggestions requiring user input (\`isCorrection\` is false), provide a helpful \`placeholder\` string. This placeholder should be a template of the improved text with placeholders like '[Your Number]' or '[Specific Outcome]' for the user to fill in. This guides the user and reduces typing. Example: If the original text is "Led the development of a new customer-facing analytics dashboard", the placeholder could be "Led the development of a new customer-facing analytics dashboard, resulting in a [Your Number]% increase in user engagement."
+Return a JSON object that strictly follows the schema.
 
-  You MUST respond with a JSON object that strictly follows the provided schema. Do not output any text outside the JSON object.`;
+Current date for all date validation: ${currentDate.display} (${currentDate.iso}), America/New_York.
+
+Review criteria:
+1. Score from 0 to 100 for ATS compatibility and recruiter impact.
+2. Specific actionable suggestions. Include originalText when the suggestion targets a precise phrase or bullet.
+3. Detect spelling, grammar, capitalization, and technical-name formatting issues. For simple corrections, set isCorrection to true.
+4. For suggestions needing user input, provide a placeholder with bracketed fields like [Your Number] or [Specific Outcome].
+5. Focus on content quality, structure, keywords, measurable impact, and job-market clarity.
+
+Date validation rules:
+- A month/year is future-dated only if it is after ${currentDate.display}.
+- Any month/year before or equal to ${currentDate.display} is in the past/current period and must not be flagged as future.
+- "Present" means ongoing through ${currentDate.display}. A range like "Month YYYY - Present" is valid when the start month/year is not after the current month/year.
+- Do not rely on your model training cutoff for today's date; use the current date above.`;
 
   const resumeReviewSchema = {
     type: Type.OBJECT,
@@ -244,23 +295,23 @@ export const reviewResume = async (resumeHtml: string): Promise<ResumeReview> =>
         items: {
           type: Type.OBJECT,
           properties: {
-            id: { type: Type.STRING, description: "A unique kebab-case ID for the suggestion (e.g., 'quantify-achievements-1')." },
-            title: { type: Type.STRING, description: "A short, clear title for the suggestion (e.g., 'Quantify Achievements')." },
-            description: { type: Type.STRING, description: "A detailed explanation of the problem and what information the user needs to provide to fix it." },
-            originalText: { type: Type.STRING, description: "The specific text from the resume that this suggestion applies to, if any." },
-            isCorrection: { type: Type.BOOLEAN, description: "Set to true if this is a simple spelling/grammar/formatting correction that doesn't require user input to resolve." },
-            placeholder: { type: Type.STRING, description: "A template string with bracketed sections like '[Your Number]' for the user to fill in. Only provide this for suggestions that are not simple corrections." }
+            id: { type: Type.STRING, description: "A unique kebab-case ID for the suggestion." },
+            title: { type: Type.STRING, description: "A short, clear title for the suggestion." },
+            description: { type: Type.STRING, description: "A detailed explanation of the problem." },
+            originalText: { type: Type.STRING, description: "The specific resume text this suggestion applies to." },
+            isCorrection: { type: Type.BOOLEAN, description: "True for simple corrections that do not need user input." },
+            placeholder: { type: Type.STRING, description: "A user-fillable rewrite template when extra input is needed." },
           },
           required: ["id", "title", "description"],
-        }
-      }
+        },
+      },
     },
     required: ["score", "suggestions"],
   };
 
   const response = await getAi().models.generateContent({
-    model: model,
-    contents: `Please review the following resume's text content (ignore the HTML tags, focus on the text):\n\n${resumeHtml}`,
+    model,
+    contents: `Please review this resume Markdown:\n\n${resumeMarkdown}`,
     config: {
       systemInstruction,
       responseMimeType: "application/json",
@@ -269,118 +320,281 @@ export const reviewResume = async (resumeHtml: string): Promise<ResumeReview> =>
   });
 
   try {
-    const responseText = response.text;
-    if (responseText === undefined) {
-        console.error("AI response text is undefined for applySuggestion:", response);
-        throw new Error("AI did not return text content for suggestion application.");
+    if (response.text === undefined) {
+      console.error("AI response text is undefined for resume review:", response);
+      throw new Error("AI did not return text content for resume review.");
     }
-    const jsonText = cleanupAiResponse(responseText);
-    const parsedJson = JSON.parse(jsonText);
-    return parsedJson as ResumeReview;
-  } catch (e) {
+    const parsedJson = JSON.parse(cleanupAiResponse(response.text));
+    return removeFalseFutureDateSuggestions(parsedJson as ResumeReview);
+  } catch (error) {
     console.error("Failed to parse JSON response from Gemini:", response.text);
     throw new Error("AI returned a response that was not valid JSON.");
   }
 };
 
-export const applySuggestion = async (resumeHtml: string, suggestion: Suggestion, userInput: string): Promise<string> => {
-    const systemInstruction = `You are an expert HTML editor specializing in resumes. Your task is to apply a specific change to a given HTML document and return the full, modified document. You must follow these rules with extreme care to avoid breaking the resume's structure.
+export const applySuggestionToMarkdown = async (
+  resumeMarkdown: string,
+  suggestion: Suggestion,
+  userInput: string
+): Promise<string> => {
+  const systemInstruction = `You are an expert resume editor. Apply one suggestion to the provided resume Markdown.
 
-**Core Rules:**
-1.  **Return Full HTML:** You MUST return the complete, valid HTML of the entire document, starting with \`<!DOCTYPE html>\`. Do not return fragments or just the changed section.
-2.  **Maintain Validity:** The returned HTML MUST be well-formed. Every tag must be correctly opened, closed, and nested. The overall structure (e.g., \`<div class="resume-container">\`, \`<section id="...">\`) must be preserved.
-3.  **Preserve Styling:** Do not alter the \`<style id="resume-style">\` block. The changes should be to the content within the \`<body>\` only.
-4.  **Surgical Edits:** Locate the *exact* HTML element(s) related to the \`Original Text to Change\` and modify *only* what is necessary. Do not rewrite unrelated sections of the resume.
+Return only the full updated Markdown resume. Do not return HTML. Do not wrap the result in code fences.
 
-**Special Instructions for Complex Changes:**
-- **Merging Job Entries:** If the suggestion involves merging two job entries, you must carefully locate the two separate \`<div class="job">\` containers. Combine their content into a *single* \`<div class="job">\` container, ensuring the final result is a single, valid job block.
-- **Quantifying Achievements:** When adding metrics or numbers to a \`<ul>\` list item, find the correct \`<li>\` and rewrite its text. Do not add new \`<li>\` elements unless explicitly required.
-- **Spelling/Formatting Corrections:** For simple corrections (like 'nodejs' to 'Node.js'), perform a targeted find-and-replace on the text content within the relevant tags. Be careful not to alter tags themselves.
+Rules:
+- Preserve the Markdown structure.
+- Make the smallest useful edit that resolves the suggestion.
+- Preserve truthful facts. Do not invent metrics or dates.
+- If the user supplied new information, incorporate it naturally.
+- Keep untouched sections stable.`;
 
-**Your Goal:**
-The user's resume preview breaks if you provide invalid HTML. Your primary goal is precision and validity. Apply the user's requested change while ensuring the final HTML document is perfectly structured.`;
+  const contents = `
+Original resume Markdown:
+${resumeMarkdown}
 
-    const contents = `
-    **Original Resume HTML:**
-    \`\`\`html
-    ${resumeHtml}
-    \`\`\`
+Suggestion:
+Title: ${suggestion.title}
+Description: ${suggestion.description}
+${suggestion.originalText ? `Original text: ${suggestion.originalText}` : ""}
+${suggestion.isCorrection ? "This is a correction that should not need extra user input." : ""}
 
-    **Suggestion to Apply:**
-    Title: ${suggestion.title}
-    Description: ${suggestion.description}
-    ${suggestion.originalText ? `Original Text to Change: ${suggestion.originalText}` : ''}
+User input:
+${userInput || "(none)"}
+`;
 
-    **User's New Information to Incorporate (if any):**
-    "${userInput}"
+  const response = await getAi().models.generateContent({
+    model,
+    contents,
+    config: {
+      systemInstruction,
+    },
+  });
 
-    Please provide the full, updated resume HTML with this change applied. Remember to follow all editing rules to ensure the HTML is valid.
-    `;
+  if (response.text === undefined) {
+    console.error("AI response text is undefined for suggestion application:", response);
+    throw new Error("AI did not return text content for suggestion application.");
+  }
 
-    const response = await getAi().models.generateContent({
-        model: model,
-        contents: contents,
-        config: {
-            systemInstruction,
-        }
-    });
+  return cleanupAiResponse(response.text);
+};
 
-    const responseText = response.text; // Access .text as a property
-    if (responseText === undefined) {
-        console.error("AI response text is undefined for applySuggestion:", response);
-        throw new Error("AI did not return text content for suggestion application.");
+export const reviseResumeMarkdown = async (
+  resumeMarkdown: string,
+  userRequest: string,
+  forceApply: boolean
+): Promise<DraftRevisionResult> => {
+  const systemInstruction = `You are a senior resume editor and candid career companion. Help revise the user's resume Markdown while protecting professionalism, truthfulness, and recruiter impact.
+
+Return only JSON. Do not wrap it in code fences.
+
+Decision rules:
+- Use "applied" when the request improves or reasonably changes the resume and can be done truthfully. Return the full updated Markdown in updatedMarkdown.
+- Use "needs_confirmation" when the request is not clearly harmful but may weaken ATS performance, sound unprofessional, be too casual, become too long, overstate tone, remove important context, or otherwise make the resume less effective. Do not update Markdown. Explain the concern and ask whether the user still wants it.
+- Use "blocked" when the request asks to invent or falsify credentials, employment, dates, metrics, awards, education, legal status, confidential information, discriminatory content, offensive content, or anything unethical. Do not update Markdown, even if forceApply is true.
+- If forceApply is true, apply requests that were only professionalism or style concerns, while still preserving truthful facts and still blocking unethical or fabricated changes.
+
+Editing rules:
+- Return the full Markdown resume only when decision is "applied".
+- Preserve the Markdown structure and stable section headings.
+- Preserve truthful facts. Do not invent employers, dates, degrees, certifications, numbers, clearance, visa status, or tools.
+- If the user asks for metrics but gives no numbers, use bracketed placeholders instead of inventing numbers.
+- Keep content resume-appropriate, concise, recruiter-friendly, and ATS-friendly.
+- Keep untouched sections stable.`;
+
+  const response = await getAi().models.generateContent({
+    model,
+    contents: `
+Current resume Markdown:
+${resumeMarkdown}
+
+User request:
+${userRequest}
+
+forceApply: ${forceApply ? "true" : "false"}
+`,
+    config: {
+      systemInstruction,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          decision: {
+            type: Type.STRING,
+            description: "One of applied, needs_confirmation, or blocked.",
+          },
+          message: {
+            type: Type.STRING,
+            description: "A concise response to the user.",
+          },
+          updatedMarkdown: {
+            type: Type.STRING,
+            description: "The full updated Markdown resume when decision is applied.",
+          },
+          concern: {
+            type: Type.STRING,
+            description: "The professional concern when decision is needs_confirmation or blocked.",
+          },
+        },
+        required: ["decision", "message"],
+      },
+    },
+  });
+
+  if (response.text === undefined) {
+    console.error("AI response text is undefined for draft revision:", response);
+    throw new Error("AI did not return draft revision JSON.");
+  }
+
+  const parsed = JSON.parse(cleanupAiResponse(response.text)) as Partial<DraftRevisionResult>;
+  if (!isDraftRevisionDecision(parsed.decision) || typeof parsed.message !== "string") {
+    console.error("Invalid draft revision response:", parsed);
+    throw new Error("AI returned an invalid draft revision response.");
+  }
+
+  const result: DraftRevisionResult = {
+    decision: parsed.decision,
+    message: parsed.message,
+  };
+
+  if (typeof parsed.concern === "string" && parsed.concern.trim()) {
+    result.concern = parsed.concern.trim();
+  }
+
+  if (parsed.decision === "applied") {
+    if (!isNonEmptyString(parsed.updatedMarkdown, MAX_MARKDOWN)) {
+      console.error("Draft revision applied without valid Markdown:", parsed);
+      throw new Error("AI did not return updated Markdown.");
     }
-    return cleanupAiResponse(responseText!); // Use non-null assertion
+    result.updatedMarkdown = cleanupAiResponse(parsed.updatedMarkdown);
+  }
+
+  return result;
+};
+
+export const convertHtmlToTemplate = async (templateHtml: string): Promise<ResumeTemplate> => {
+  const systemInstruction = `You convert pasted resume HTML/CSS into a reusable WeaveCV template configuration.
+
+Return only JSON. Do not wrap it in code fences.
+
+The returned object must have:
+- name: short professional template name.
+- thumbnailColor: a representative hex color from the design.
+- layout: either:
+  { "type": "single-column", "order": ["Header", "Contact Information", "Professional Summary", "Skills", "Work Experience", "Projects", "Education", "Certifications", "Languages"] }
+  or
+  { "type": "two-column", "featured": ["Header"], "primary": ["Professional Summary", "Work Experience", "Projects"], "secondary": ["Contact Information", "Skills", "Education", "Certifications", "Languages"] }
+- css: CSS that styles these stable generated classes:
+  .resume-container, .resume-container.has-columns, .resume-container.has-featured, .resume-columns, .left-column, .right-column, .main-header, .contact-info, .contact-items, .contact-item, .professional-summary, section, h1, h2, h3, p, ul, li, .job, .job-header, .job-heading, .job-date, .job-meta, .education-item, .certifications-item, .skills, .skill-groups, .skill-group, .skill-list
+
+Rules:
+- Do not include HTML in css.
+- Do not use external assets, script tags, remote images, or @import.
+- Translate Tailwind utility classes from the pasted HTML into plain CSS. Do not depend on Tailwind being present.
+- If the pasted design has a full-width header above columns, use "featured": ["Header"] and put the sidebar sections in secondary.
+- Keep contact information readable in narrow columns. Do not use large letter spacing or word-breaking for contact items.
+- Skills may render as .skill-group and .skill-list chip groups when the Markdown contains "Category: item, item" bullets.
+- Keep CSS scoped to the stable classes and common resume elements.
+- Preserve the visual character of the pasted HTML, but make it robust for generated resume content.
+- Prefer compact, print-friendly styling.`;
+
+  const response = await getAi().models.generateContent({
+    model,
+    contents: `Convert this resume HTML/CSS into a reusable template:\n\n${templateHtml}`,
+    config: {
+      systemInstruction,
+      responseMimeType: "application/json",
+    },
+  });
+
+  if (response.text === undefined) {
+    console.error("AI response text is undefined for template import:", response);
+    throw new Error("AI did not return template JSON.");
+  }
+
+  const parsed = JSON.parse(cleanupAiResponse(response.text));
+  if (!isTemplateLike(parsed)) {
+    console.error("Invalid imported template shape:", parsed);
+    throw new Error("AI returned an invalid template format.");
+  }
+
+  const name = parsed.name.trim().slice(0, 60) || "Imported Template";
+  return {
+    id: `imported-${slugify(name)}-${Date.now()}`,
+    name,
+    thumbnailColor: /^#[0-9a-f]{6}$/i.test(parsed.thumbnailColor) ? parsed.thumbnailColor : "#334155",
+    css: sanitizeTemplateCss(parsed.css),
+    layout: parsed.layout,
+    source: "imported",
+    templateVersion: IMPORTED_TEMPLATE_VERSION,
+  };
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const allowed = await enforceRateLimit(req, res, { prefix: "gemini", limit: 10, window: "1 m" });
   if (!allowed) return;
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   const body = req.body ?? {};
-  const { action, rawText, layout, resumeHtml, suggestion, userInput } = body;
+  const { action, rawText, jobDescription, resumeMarkdown, suggestion, userInput, templateHtml, forceApply } = body;
 
   try {
     switch (action) {
-      case 'generate': {
-        if (!isNonEmptyString(rawText, MAX_RAW_TEXT) || !isResumeLayout(layout)) {
-          return res.status(400).json({ error: 'Invalid generate request.' });
+      case "generate": {
+        if (
+          !isNonEmptyString(rawText, MAX_RAW_TEXT) ||
+          (jobDescription !== undefined && typeof jobDescription !== "string") ||
+          (typeof jobDescription === "string" && jobDescription.length > MAX_JOB_DESCRIPTION)
+        ) {
+          return res.status(400).json({ error: "Invalid generate request." });
         }
-        const generatedHtml = await generateResume(rawText, layout);
-        const safeHtml = sanitizeHtml(generatedHtml);
-        return res.status(200).send(safeHtml);
+        const markdown = await generateResumeMarkdown(rawText, jobDescription);
+        return res.status(200).send(markdown);
       }
-      case 'review': {
-        if (!isNonEmptyString(resumeHtml, MAX_HTML)) {
-          return res.status(400).json({ error: 'Invalid review request.' });
+      case "review": {
+        if (!isNonEmptyString(resumeMarkdown, MAX_MARKDOWN)) {
+          return res.status(400).json({ error: "Invalid review request." });
         }
-        const safeHtml = sanitizeHtml(resumeHtml);
-        const review = await reviewResume(safeHtml);
+        const review = await reviewResumeMarkdown(resumeMarkdown);
         return res.status(200).json(review);
       }
-      case 'apply': {
+      case "apply": {
         if (
-          !isNonEmptyString(resumeHtml, MAX_HTML) ||
+          !isNonEmptyString(resumeMarkdown, MAX_MARKDOWN) ||
           !isSuggestion(suggestion) ||
-          (userInput !== undefined && typeof userInput !== 'string') ||
-          (typeof userInput === 'string' && userInput.length > MAX_USER_INPUT)
+          (userInput !== undefined && typeof userInput !== "string") ||
+          (typeof userInput === "string" && userInput.length > MAX_USER_INPUT)
         ) {
-          return res.status(400).json({ error: 'Invalid apply request.' });
+          return res.status(400).json({ error: "Invalid apply request." });
         }
-        const safeHtml = sanitizeHtml(resumeHtml);
-        const appliedHtml = await applySuggestion(safeHtml, suggestion, userInput || '');
-        const safeAppliedHtml = sanitizeHtml(appliedHtml);
-        return res.status(200).send(safeAppliedHtml);
+        const updatedMarkdown = await applySuggestionToMarkdown(resumeMarkdown, suggestion, userInput || "");
+        return res.status(200).send(updatedMarkdown);
+      }
+      case "reviseDraft": {
+        if (
+          !isNonEmptyString(resumeMarkdown, MAX_MARKDOWN) ||
+          !isNonEmptyString(userInput, MAX_USER_INPUT) ||
+          (forceApply !== undefined && typeof forceApply !== "boolean")
+        ) {
+          return res.status(400).json({ error: "Invalid revise draft request." });
+        }
+        const revision = await reviseResumeMarkdown(resumeMarkdown, userInput, forceApply === true);
+        return res.status(200).json(revision);
+      }
+      case "importTemplate": {
+        if (!isNonEmptyString(templateHtml, MAX_TEMPLATE_HTML)) {
+          return res.status(400).json({ error: "Invalid import template request." });
+        }
+        const template = await convertHtmlToTemplate(templateHtml);
+        return res.status(200).json(template);
       }
       default:
-        return res.status(400).json({ error: 'Invalid action' });
+        return res.status(400).json({ error: "Invalid action" });
     }
   } catch (error) {
-    console.error('Error processing request:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error("Error processing request:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 }

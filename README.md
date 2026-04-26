@@ -1,16 +1,29 @@
 # WeaveCV: AI-Powered Resume Builder
 
-WeaveCV is an AI Studio application designed to help users generate, preview, review, and export professional resumes. It leverages AI for content generation and provides various export options, including high-fidelity PDF generation via a dedicated backend service.
+WeaveCV is an AI Studio application designed to help users create, review, design, and export professional resumes. AI is used for content generation and ATS feedback, while template selection is handled locally so users can change designs without triggering new LLM calls.
 
 ## Features
 
-*   **AI-Powered Resume Generation**: Generate resume content using AI.
-*   **Interactive Preview**: See a live preview of your resume with different templates and fonts.
-*   **Review & Score**: Get feedback and a score on your resume.
+*   **Stepped Resume Workflow**: Move through Create, Review, Design, and Download without crowding every tool onto one screen.
+*   **AI-Powered Markdown Drafting**: Generate editable resume Markdown from raw resume text, with optional job-description tuning.
+*   **Guided Draft Changes**: Ask AI for Markdown edits during Create, with confirmation prompts for changes that may weaken professionalism.
+*   **AI Review & Score**: Get ATS feedback and apply suggestions to the Markdown content.
+*   **Local Template Rendering**: Pick a predefined or imported HTML/CSS template after content is finalized. Template selection does not call the LLM.
+*   **Paginated Preview**: Render the selected resume into paper-sized page images before export, using a configurable layout width so desktop resume designs do not collapse into mobile breakpoints.
+*   **Page Setup Controls**: Choose paper size, layout width, and page margins before exporting.
+*   **Style Import**: Paste resume HTML/CSS and convert it into a reusable WeaveCV template.
 *   **Flexible Export Options**:
-    *   **As Document (PDF)**: Generate high-quality PDFs using a server-side Puppeteer service, ensuring accurate rendering, proper margins, and correct pagination.
-    *   **As Image (JPEG)**: Export your resume as a JPEG image.
-    *   **As Code (HTML, CSS)**: Download the raw HTML and CSS of your resume.
+    *   **As Document (PDF)**: Generate high-fidelity PDFs from the same page images shown in preview.
+    *   **As Code (HTML)**: Download the rendered resume HTML.
+
+## Current Workflow
+
+1.  **Create**: Paste resume text, optionally enable job-description tuning, generate an editable Markdown draft, and ask AI for targeted changes.
+2.  **Review**: Edit Markdown directly, run the AI ATS review, and apply or discard suggestions.
+3.  **Design**: Select or import a template. The app converts Markdown to HTML locally with no AI call when switching templates.
+4.  **Download**: Set a file name and export the selected design as PDF or HTML. PDF export uses the paginated preview renderer, not the browser print dialog.
+
+Imported templates are stored in the browser session.
 
 ## Run Locally
 
@@ -54,30 +67,21 @@ To get WeaveCV up and running on your local machine, follow these steps:
 
 ### Running the Application
 
-WeaveCV consists of two main parts: the frontend (React app) and a backend server for PDF generation. Both need to be running for full functionality.
+Run the app through Vercel's local runtime so the frontend and `/api/*` serverless functions use the same origin:
 
-1.  **Start the Backend PDF Generation Server:**
-    Open a new terminal in the project root (`weavecv/`) and run:
-    ```bash
-    npm run start:server
-    ```
-    This will compile and start the server, which listens on `http://localhost:3001`. Keep this terminal open.
+```bash
+vercel dev
+```
 
-2.  **Start the Frontend Application:**
-    Open another terminal in the project root (`weavecv/`) and run:
-    ```bash
-    npm run dev
-    ```
-    This will start the Vite development server, usually on `http://localhost:5173`.
+`npm run dev` also starts `vercel dev`. Use `npm run dev:vite` only when you intentionally want the raw Vite server with mocked API calls.
 
-3.  **Access the Application:**
-    Open your web browser and navigate to the address provided by the `npm run dev` command (e.g., `http://localhost:5173`).
+Open the local URL printed by the command, usually `http://localhost:3000`. If that port is busy, Vercel will choose another port.
 
-You should now be able to use the WeaveCV application, including the "Export" functionality for PDF, JPEG, and HTML/CSS.
+You should now be able to use the WeaveCV application, including the "Export" functionality for PDF and HTML/CSS.
 
 ### Mocking API Calls (MSW)
 
-For local development with `npm run dev`, the app can mock `/api/*` calls with MSW. This is enabled by default via `.env.development`.
+For local development with raw Vite, the app can mock `/api/*` calls with MSW. This is enabled by default via `.env.development`.
 
 1. Install dependencies:
    ```bash

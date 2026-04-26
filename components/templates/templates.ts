@@ -2,6 +2,87 @@ import type { ResumeTemplate } from '../../types';
 
 export const templates: ResumeTemplate[] = [
   {
+    id: 'modern-tech',
+    name: 'Modern Tech',
+    thumbnailColor: '#111827',
+    layout: {
+      type: 'two-column',
+      featured: ['Header'],
+      primary: ['Professional Summary', 'Work Experience', 'Projects', 'Certifications'],
+      secondary: ['Contact Information', 'Skills', 'Education', 'Languages'],
+    },
+    css: `
+      body { background: #f8fafc; color: #171717; }
+      .resume-container {
+        max-width: 1024px;
+        min-height: 1120px;
+        margin: 0 auto;
+        padding: 54px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.16);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        color: #171717;
+        line-height: 1.58;
+      }
+      .resume-container.has-columns { display: block; }
+      .resume-columns { display: grid !important; grid-template-columns: minmax(210px, 31%) minmax(0, 1fr); gap: 48px; }
+      .left-column, .right-column { width: auto; padding: 0; }
+      .main-header { border-left: 8px solid #111; padding-left: 28px; margin-bottom: 44px; }
+      .main-header h1 { color: #111; font-size: 44px; line-height: 1.05; margin: 0 0 10px; font-weight: 800; letter-spacing: -0.03em; }
+      .main-header h3 { color: #525252; font-size: 17px; line-height: 1.4; margin: 0; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+      section { margin-bottom: 34px; }
+      h2 {
+        margin: 0 0 16px;
+        padding-bottom: 7px;
+        border-bottom: 1px solid #d4d4d4;
+        color: #737373;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        line-height: 1.3;
+        text-transform: uppercase;
+      }
+      p { margin: 0 0 10px; color: #404040; font-size: 13px; }
+      .right-column p, .right-column li { font-size: 13px; color: #404040; }
+      .contact-items { gap: 9px; }
+      .contact-item { color: #404040; font-size: 12px; line-height: 1.45; overflow-wrap: break-word; }
+      .skills { margin-bottom: 34px; }
+      .skill-groups { gap: 17px; }
+      .skill-group h3 { margin: 0 0 8px; color: #171717; font-size: 12px; font-weight: 800; line-height: 1.3; }
+      .skill-list { gap: 5px; }
+      .skill-list span {
+        border-radius: 4px;
+        background: #f1f5f9;
+        color: #404040;
+        padding: 3px 7px;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+      .job { margin-bottom: 32px; }
+      .job-header { margin-bottom: 10px; }
+      .job-heading { display: flex; justify-content: space-between; gap: 18px; align-items: baseline; }
+      .job-header h3 { color: #171717; font-size: 17px; font-weight: 800; line-height: 1.25; }
+      .job-date { color: #737373; font-size: 12px; font-weight: 800; white-space: nowrap; }
+      .job-meta { margin-top: 4px; color: #404040; font-size: 13px; font-style: italic; font-weight: 700; }
+      ul { margin: 0; padding-left: 18px; }
+      li { margin-bottom: 8px; padding-left: 2px; }
+      li::marker { color: #111; }
+      strong { color: #171717; font-weight: 800; }
+      .education-item h3, .certifications-item h3 { color: #171717; font-size: 13px; font-weight: 800; }
+      .education-item p, .certifications-item p { color: #525252; font-size: 12px; }
+      @media (max-width: 760px) {
+        .resume-container { padding: 28px; border-radius: 0; }
+        .resume-columns { grid-template-columns: 1fr; gap: 12px; }
+        .main-header { padding-left: 18px; margin-bottom: 30px; }
+        .main-header h1 { font-size: 34px; }
+        .job-heading { display: block; }
+        .job-date { display: block; margin-top: 4px; white-space: normal; }
+      }
+    `,
+  },
+  {
     id: 'elegant-coral',
     name: 'Elegant Coral',
     thumbnailColor: '#EAA290',

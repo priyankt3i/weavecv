@@ -1,6 +1,6 @@
-import type { ResumeReview, Suggestion, ResumeLayout } from '../types';
+import type { DraftRevisionResult, ResumeReview, ResumeTemplate, Suggestion } from '../types';
 
-export const generateResume = async (rawText: string, layout: ResumeLayout): Promise<string> => {
+export const generateResume = async (rawText: string, jobDescription: string): Promise<string> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
     headers: {
@@ -9,7 +9,7 @@ export const generateResume = async (rawText: string, layout: ResumeLayout): Pro
     body: JSON.stringify({
       action: 'generate',
       rawText,
-      layout,
+      jobDescription,
     }),
   });
   if (!response.ok) {
@@ -18,7 +18,7 @@ export const generateResume = async (rawText: string, layout: ResumeLayout): Pro
   return response.text();
 };
 
-export const reviewResume = async (resumeHtml: string): Promise<ResumeReview> => {
+export const reviewResume = async (resumeMarkdown: string): Promise<ResumeReview> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
     headers: {
@@ -26,7 +26,7 @@ export const reviewResume = async (resumeHtml: string): Promise<ResumeReview> =>
     },
     body: JSON.stringify({
       action: 'review',
-      resumeHtml,
+      resumeMarkdown,
     }),
   });
   if (!response.ok) {
@@ -35,7 +35,7 @@ export const reviewResume = async (resumeHtml: string): Promise<ResumeReview> =>
   return response.json();
 };
 
-export const applySuggestion = async (resumeHtml: string, suggestion: Suggestion, userInput: string): Promise<string> => {
+export const applySuggestion = async (resumeMarkdown: string, suggestion: Suggestion, userInput: string): Promise<string> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
     headers: {
@@ -43,7 +43,7 @@ export const applySuggestion = async (resumeHtml: string, suggestion: Suggestion
     },
     body: JSON.stringify({
       action: 'apply',
-      resumeHtml,
+      resumeMarkdown,
       suggestion,
       userInput,
     }),
@@ -52,4 +52,44 @@ export const applySuggestion = async (resumeHtml: string, suggestion: Suggestion
     throw new Error('Failed to apply suggestion');
   }
   return response.text();
+};
+
+export const importResumeTemplate = async (templateHtml: string): Promise<ResumeTemplate> => {
+  const response = await fetch('/api/gemini', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      action: 'importTemplate',
+      templateHtml,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to import template');
+  }
+  return response.json();
+};
+
+export const reviseResumeDraft = async (
+  resumeMarkdown: string,
+  userRequest: string,
+  forceApply = false
+): Promise<DraftRevisionResult> => {
+  const response = await fetch('/api/gemini', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      action: 'reviseDraft',
+      resumeMarkdown,
+      userInput: userRequest,
+      forceApply,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to revise resume draft');
+  }
+  return response.json();
 };

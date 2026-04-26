@@ -1,4 +1,4 @@
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
 import { readFileSync } from 'fs';
 import path from 'path';
 
