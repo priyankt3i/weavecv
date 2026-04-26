@@ -1,11 +1,11 @@
-import { Ratelimit } from "@upstash/ratelimit";
+import { Ratelimit, type Duration } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest, VercelResponse } from "./_vercelTypes.js";
 
 type RateLimitOptions = {
   prefix: string;
   limit: number;
-  window: string;
+  window: Duration;
 };
 
 const limiterCache = new Map<string, Ratelimit>();

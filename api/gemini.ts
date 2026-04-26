@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { ResumeReview, Suggestion, ResumeLayout } from '../types';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from './_vercelTypes.js';
 import { enforceRateLimit } from "./_rateLimit.js";
 import { sanitizeHtml } from "./_sanitize.js";
 

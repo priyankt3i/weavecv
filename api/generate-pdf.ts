@@ -1,6 +1,6 @@
 import puppeteer from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from './_vercelTypes.js';
 import { enforceRateLimit } from './_rateLimit.js';
 import { sanitizeHtml } from './_sanitize.js';
 
