@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import '@neondatabase/neon-js/ui/css';
 
 const enableMocks = import.meta.env.DEV && import.meta.env.VITE_USE_MOCKS === 'true';
 

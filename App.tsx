@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { AuthView, NeonAuthUIProvider, UserButton } from "@neondatabase/neon-js/auth/react/ui";
 import { useResume, type WorkflowStep } from "./hooks/useResume";
 import { ReviewPane } from "./components/ReviewPane";
 import { SuggestionModal } from "./components/SuggestionModal";
 import { Icon } from "./components/Icon";
 import { PaginatedResumePreview, type PaginatedResumePreviewHandle } from "./components/PaginatedResumePreview";
-import type { DraftChatMessage, ResumeTemplate } from "./types";
+import { neonClient, neonConfig } from "./lib/neonClient";
+import { deleteSavedResume, getSavedResume, listSavedResumes, saveResume } from "./services/savedResumeService";
+import type { DraftChatMessage, ResumeDraftSnapshot, ResumeTemplate, SavedResume, SavedResumeSummary } from "./types";
 import {
   defaultPdfSettings,
   layoutWidthPresets,
@@ -26,6 +29,67 @@ const steps: StepConfig[] = [
   { id: "design", label: "Design" },
   { id: "download", label: "Download" },
 ];
+
+const REVIEW_STORAGE_VERSION = 2;
+
+const resumeSessionKeys = [
+  "activeStep",
+  "rawText",
+  "tuneForJob",
+  "jobDescription",
+  "resumeMarkdown",
+  "activeTemplateId",
+  "importedTemplates",
+  "draftChatMessages",
+  "review",
+  "pdfRenderSettings",
+  "exportFileName",
+  "designSidebarCollapsed",
+];
+
+const clearResumeSession = () => {
+  resumeSessionKeys.forEach((key) => sessionStorage.removeItem(key));
+};
+
+const hydrateResumeSession = (resume: SavedResume) => {
+  clearResumeSession();
+  sessionStorage.setItem("activeStep", resume.activeStep);
+  sessionStorage.setItem("rawText", resume.rawText);
+  sessionStorage.setItem("tuneForJob", String(resume.tuneForJob));
+  sessionStorage.setItem("jobDescription", resume.jobDescription);
+  sessionStorage.setItem("resumeMarkdown", resume.resumeMarkdown);
+  sessionStorage.setItem("activeTemplateId", resume.activeTemplateId);
+  sessionStorage.setItem("importedTemplates", JSON.stringify(resume.importedTemplates));
+  sessionStorage.setItem("draftChatMessages", JSON.stringify(resume.draftChatMessages));
+  sessionStorage.setItem("exportFileName", resume.fileName);
+
+  if (resume.review) {
+    sessionStorage.setItem("review", JSON.stringify({ version: REVIEW_STORAGE_VERSION, review: resume.review }));
+  }
+
+  if (resume.renderSettings) {
+    sessionStorage.setItem("pdfRenderSettings", JSON.stringify(resume.renderSettings));
+  }
+};
+
+const inferResumeTitle = (snapshot: ResumeDraftSnapshot): string => {
+  const markdownName = snapshot.resumeMarkdown
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("# "));
+  const rawName = snapshot.rawText
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  const fallback = snapshot.fileName.trim();
+  return markdownName?.replace(/^#+\s*/, "").trim() || rawName || fallback || "Untitled resume";
+};
+
+const formatUpdatedAt = (value: string): string =>
+  new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 
 const canUseStep = (step: WorkflowStep, hasDraft: boolean): boolean => {
   if (step === "create") return true;
@@ -429,7 +493,19 @@ const ImportTemplateModal = ({
   );
 };
 
-export default function App() {
+type ResumeEditorProps = {
+  savedResumeId?: string | null;
+  canSaveToCloud?: boolean;
+  onBackToDashboard?: () => void;
+  onSaveResume?: (snapshot: ResumeDraftSnapshot, title: string) => Promise<SavedResume>;
+};
+
+function ResumeEditor({
+  savedResumeId = null,
+  canSaveToCloud = false,
+  onBackToDashboard,
+  onSaveResume,
+}: ResumeEditorProps) {
   const {
     activeStep,
     setActiveStep,
@@ -474,6 +550,8 @@ export default function App() {
   );
   const [renderSettings, setRenderSettings] = useState<RenderSettingsState>(readStoredRenderSettings);
   const [fileName, setFileName] = useState(() => sessionStorage.getItem("exportFileName") || "resume");
+  const [isSavingResume, setIsSavingResume] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
   const paginatedPreviewRef = useRef<PaginatedResumePreviewHandle>(null);
   const hasDraft = resumeMarkdown.trim().length > 0;
   const pdfSettings = useMemo(() => toPdfSettings(renderSettings), [renderSettings]);
@@ -493,6 +571,37 @@ export default function App() {
   const goToStep = (step: WorkflowStep) => {
     if (canUseStep(step, hasDraft)) {
       setActiveStep(step);
+    }
+  };
+
+  const buildSnapshot = (): ResumeDraftSnapshot => ({
+    rawText,
+    tuneForJob,
+    jobDescription,
+    resumeMarkdown,
+    activeStep,
+    activeTemplateId: activeTemplate.id,
+    importedTemplates: allTemplates.filter((template) => template.source === "imported"),
+    draftChatMessages,
+    review,
+    renderSettings,
+    fileName,
+  });
+
+  const handleSaveResume = async () => {
+    if (!onSaveResume || isSavingResume) return;
+    setIsSavingResume(true);
+    setSaveMessage("");
+    const snapshot = buildSnapshot();
+
+    try {
+      const saved = await onSaveResume(snapshot, inferResumeTitle(snapshot));
+      setSaveMessage(`Saved ${saved.title}`);
+    } catch (error) {
+      console.error("Failed to save resume:", error);
+      setSaveMessage("Could not save. Check Neon Auth and Data API setup.");
+    } finally {
+      setIsSavingResume(false);
     }
   };
 
@@ -535,14 +644,13 @@ export default function App() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <img src="/weave.png" alt="WeaveCV Logo" className="h-8 w-8" />
-              <h1 className="text-xl font-bold text-slate-800 sm:text-2xl">WeaveCV</h1>
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold text-slate-800 sm:text-2xl">WeaveCV</h1>
+                <p className="truncate text-xs font-semibold text-slate-500">
+                  {savedResumeId ? "Saved resume" : canSaveToCloud ? "Unsaved cloud draft" : "Local draft"}
+                </p>
+              </div>
             </div>
-            <button
-              onClick={resetResume}
-              className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 lg:hidden"
-            >
-              Start Over
-            </button>
           </div>
 
           <nav className="flex gap-2 overflow-x-auto pb-1 lg:pb-0" aria-label="Resume workflow">
@@ -573,12 +681,32 @@ export default function App() {
             })}
           </nav>
 
-          <button
-            onClick={resetResume}
-            className="hidden rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 lg:block"
-          >
-            Start Over
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {saveMessage && <span className="text-xs font-semibold text-slate-500">{saveMessage}</span>}
+            {onBackToDashboard && (
+              <button
+                onClick={onBackToDashboard}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Dashboard
+              </button>
+            )}
+            {onSaveResume && (
+              <button
+                onClick={handleSaveResume}
+                disabled={!canSaveToCloud || isSavingResume}
+                className="rounded-md bg-sky-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-300"
+              >
+                {isSavingResume ? "Saving..." : "Save"}
+              </button>
+            )}
+            <button
+              onClick={resetResume}
+              className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+            >
+              Start Over
+            </button>
+          </div>
         </div>
       </header>
 
@@ -865,5 +993,277 @@ export default function App() {
         onImport={handleImportTemplate}
       />
     </div>
+  );
+}
+
+const LoadingScreen = ({ label }: { label: string }) => (
+  <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 text-slate-700">
+    <div className="rounded-md border border-slate-200 bg-white px-5 py-4 text-sm font-semibold shadow-sm">{label}</div>
+  </div>
+);
+
+const SetupNotice = ({ onContinueLocal }: { onContinueLocal: () => void }) => (
+  <div className="min-h-screen bg-slate-100 text-slate-900">
+    <main className="mx-auto grid min-h-screen max-w-3xl place-items-center px-4 py-8">
+      <section className="w-full rounded-md border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3">
+          <img src="/weave.png" alt="WeaveCV Logo" className="h-9 w-9" />
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">Finish Neon Auth Setup</h1>
+            <p className="mt-1 text-sm font-semibold text-slate-500">The database is connected. Auth and Data API env vars are still missing.</p>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+          <p>
+            Enable Neon Auth and the Neon Data API for the new <span className="font-bold">neon-rose-bridge</span> resource, then pull env
+            vars again with <span className="font-mono font-bold">vercel env pull .env.local</span>.
+          </p>
+          <p className="font-mono text-xs">
+            Required client env: VITE_NEON_AUTH_URL and VITE_NEON_DATA_API_URL
+          </p>
+        </div>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+          <button
+            onClick={onContinueLocal}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-700"
+          >
+            Continue Locally
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
+);
+
+const AuthScreen = ({ onContinueLocal }: { onContinueLocal: () => void }) => (
+  <div className="min-h-screen bg-slate-100 text-slate-900">
+    <main className="mx-auto grid min-h-screen max-w-5xl grid-cols-1 items-center gap-6 px-4 py-8 lg:grid-cols-[minmax(0,1fr)_420px]">
+      <section className="grid gap-4">
+        <div className="flex items-center gap-3">
+          <img src="/weave.png" alt="WeaveCV Logo" className="h-10 w-10" />
+          <h1 className="text-2xl font-bold text-slate-900">WeaveCV</h1>
+        </div>
+        <div>
+          <h2 className="text-3xl font-bold tracking-normal text-slate-950">Your resumes, saved in one place</h2>
+          <p className="mt-3 max-w-xl text-base leading-7 text-slate-600">
+            Sign in to keep drafts, imported styles, reviews, and export settings attached to your account.
+          </p>
+        </div>
+        <button
+          onClick={onContinueLocal}
+          className="w-fit rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
+        >
+          Continue without saving
+        </button>
+      </section>
+      <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+        <AuthView pathname="sign-in" />
+      </section>
+    </main>
+  </div>
+);
+
+type DashboardProps = {
+  onNewResume: () => void;
+  onOpenResume: (resume: SavedResume) => void;
+};
+
+const Dashboard = ({ onNewResume, onOpenResume }: DashboardProps) => {
+  const [resumes, setResumes] = useState<SavedResumeSummary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  const refreshResumes = useCallback(async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      setResumes(await listSavedResumes());
+    } catch (loadError) {
+      console.error("Failed to load resumes:", loadError);
+      setError("Could not load saved resumes. Check Neon Auth, Data API, and the resumes table policies.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshResumes();
+  }, [refreshResumes]);
+
+  const handleOpen = async (id: string) => {
+    setOpeningId(id);
+    setError("");
+    try {
+      onOpenResume(await getSavedResume(id));
+    } catch (openError) {
+      console.error("Failed to open resume:", openError);
+      setError("Could not open that resume.");
+    } finally {
+      setOpeningId(null);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Delete this resume?")) return;
+    setError("");
+    try {
+      await deleteSavedResume(id);
+      setResumes((current) => current.filter((resume) => resume.id !== id));
+    } catch (deleteError) {
+      console.error("Failed to delete resume:", deleteError);
+      setError("Could not delete that resume.");
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 sm:px-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <img src="/weave.png" alt="WeaveCV Logo" className="h-9 w-9" />
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+              <p className="text-sm font-semibold text-slate-500">{resumes.length} saved resumes</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={onNewResume}
+              className="rounded-md bg-sky-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-sky-700"
+            >
+              New Resume
+            </button>
+            <UserButton />
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-7xl px-4 py-5 sm:px-5">
+        {error && <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</div>}
+
+        {isLoading ? (
+          <div className="rounded-md border border-slate-200 bg-white p-6 text-sm font-semibold text-slate-500">Loading resumes...</div>
+        ) : resumes.length === 0 ? (
+          <section className="rounded-md border border-slate-200 bg-white p-6">
+            <h2 className="text-lg font-bold text-slate-900">No saved resumes yet</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Create your first draft, then use Save from the editor header to keep it here.
+            </p>
+            <button
+              onClick={onNewResume}
+              className="mt-4 rounded-md bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-700"
+            >
+              Create Resume
+            </button>
+          </section>
+        ) : (
+          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {resumes.map((resume) => (
+              <article key={resume.id} className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="min-h-[88px]">
+                  <h2 className="line-clamp-2 text-base font-bold text-slate-900">{resume.title}</h2>
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                    Updated {formatUpdatedAt(resume.updatedAt)}
+                  </p>
+                  <p className="mt-2 truncate text-sm text-slate-600">{resume.fileName || "resume"}</p>
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => handleOpen(resume.id)}
+                    disabled={openingId === resume.id}
+                    className="flex-1 rounded-md bg-slate-900 px-3 py-2 text-sm font-bold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {openingId === resume.id ? "Opening..." : "Open"}
+                  </button>
+                  <button
+                    onClick={() => handleDelete(resume.id)}
+                    className="flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 transition hover:bg-red-50"
+                    aria-label={`Delete ${resume.title}`}
+                    title="Delete resume"
+                  >
+                    <Icon name="trash" className="h-4 w-4" />
+                  </button>
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+      </main>
+    </div>
+  );
+};
+
+const ConfiguredApp = () => {
+  if (!neonClient) return null;
+
+  const session = neonClient.auth.useSession();
+  const [isLocalMode, setIsLocalMode] = useState(false);
+  const [view, setView] = useState<"dashboard" | "editor">("dashboard");
+  const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
+  const [editorKey, setEditorKey] = useState("dashboard");
+
+  if (session.isPending) {
+    return <LoadingScreen label="Checking account..." />;
+  }
+
+  if (!session.data && !isLocalMode) {
+    return <AuthScreen onContinueLocal={() => setIsLocalMode(true)} />;
+  }
+
+  if (isLocalMode) {
+    return <ResumeEditor canSaveToCloud={false} />;
+  }
+
+  const handleNewResume = () => {
+    clearResumeSession();
+    setSelectedResumeId(null);
+    setEditorKey(`new-${Date.now()}`);
+    setView("editor");
+  };
+
+  const handleOpenResume = (resume: SavedResume) => {
+    hydrateResumeSession(resume);
+    setSelectedResumeId(resume.id);
+    setEditorKey(resume.id);
+    setView("editor");
+  };
+
+  const handleSave = async (snapshot: ResumeDraftSnapshot, title: string) => {
+    const saved = await saveResume(snapshot, { id: selectedResumeId, title });
+    setSelectedResumeId(saved.id);
+    return saved;
+  };
+
+  if (view === "editor") {
+    return (
+      <ResumeEditor
+        key={editorKey}
+        savedResumeId={selectedResumeId}
+        canSaveToCloud
+        onBackToDashboard={() => setView("dashboard")}
+        onSaveResume={handleSave}
+      />
+    );
+  }
+
+  return <Dashboard onNewResume={handleNewResume} onOpenResume={handleOpenResume} />;
+};
+
+export default function App() {
+  const [continueLocal, setContinueLocal] = useState(false);
+
+  if (!neonConfig.isConfigured && !continueLocal) {
+    return <SetupNotice onContinueLocal={() => setContinueLocal(true)} />;
+  }
+
+  if (!neonConfig.isConfigured) {
+    return <ResumeEditor canSaveToCloud={false} />;
+  }
+
+  return (
+    <NeonAuthUIProvider authClient={neonClient!.auth}>
+      <ConfiguredApp />
+    </NeonAuthUIProvider>
   );
 }
