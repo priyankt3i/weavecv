@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { AuthView, NeonAuthUIProvider, UserButton } from "@neondatabase/neon-js/auth/react/ui";
 import { useResume, type WorkflowStep } from "./hooks/useResume";
 import { ReviewPane } from "./components/ReviewPane";
@@ -31,6 +31,40 @@ const steps: StepConfig[] = [
 ];
 
 const REVIEW_STORAGE_VERSION = 2;
+
+type BrowserLocation = {
+  pathname: string;
+  search: string;
+  hash: string;
+};
+
+type AuthLinkProps = {
+  href: string;
+  className?: string;
+  children: ReactNode;
+};
+
+const getBrowserLocation = (): BrowserLocation => {
+  if (typeof window === "undefined") {
+    return { pathname: "/", search: "", hash: "" };
+  }
+
+  return {
+    pathname: window.location.pathname,
+    search: window.location.search,
+    hash: window.location.hash,
+  };
+};
+
+const isSameOriginHref = (href: string) => {
+  if (typeof window === "undefined") return false;
+  return new URL(href, window.location.href).origin === window.location.origin;
+};
+
+const isAuthActionPath = (pathname: string) => {
+  const segments = pathname.split("/").filter(Boolean);
+  return segments[0] === "auth" && ["callback", "sign-out"].includes(segments[segments.length - 1] || "");
+};
 
 const resumeSessionKeys = [
   "activeStep",
@@ -588,19 +622,51 @@ function ResumeEditor({
     fileName,
   });
 
+  const saveCurrentResume = async () => {
+    if (!onSaveResume) return null;
+
+    const snapshot = buildSnapshot();
+    return onSaveResume(snapshot, inferResumeTitle(snapshot));
+  };
+
   const handleSaveResume = async () => {
     if (!onSaveResume || isSavingResume) return;
     setIsSavingResume(true);
     setSaveMessage("");
-    const snapshot = buildSnapshot();
 
     try {
-      const saved = await onSaveResume(snapshot, inferResumeTitle(snapshot));
+      const saved = await saveCurrentResume();
+      if (!saved) return;
       setSaveMessage(`Saved ${saved.title}`);
     } catch (error) {
       console.error("Failed to save resume:", error);
       setSaveMessage("Could not save. Check Neon Auth and Data API setup.");
     } finally {
+      setIsSavingResume(false);
+    }
+  };
+
+  const handleBackToDashboard = async () => {
+    if (!onBackToDashboard || isSavingResume) return;
+
+    if (!canSaveToCloud || !onSaveResume || !hasDraft) {
+      onBackToDashboard();
+      return;
+    }
+
+    setIsSavingResume(true);
+    setSaveMessage("Saving draft...");
+
+    try {
+      const saved = await saveCurrentResume();
+      if (saved) {
+        setSaveMessage(`Saved ${saved.title}`);
+        setIsSavingResume(false);
+        onBackToDashboard();
+      }
+    } catch (error) {
+      console.error("Failed to save resume before returning to dashboard:", error);
+      setSaveMessage("Could not save. Stay here and try Save again.");
       setIsSavingResume(false);
     }
   };
@@ -685,10 +751,11 @@ function ResumeEditor({
             {saveMessage && <span className="text-xs font-semibold text-slate-500">{saveMessage}</span>}
             {onBackToDashboard && (
               <button
-                onClick={onBackToDashboard}
-                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                onClick={handleBackToDashboard}
+                disabled={isSavingResume}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Dashboard
+                {isSavingResume ? "Saving..." : "Dashboard"}
               </button>
             )}
             {onSaveResume && (
@@ -1035,7 +1102,7 @@ const SetupNotice = ({ onContinueLocal }: { onContinueLocal: () => void }) => (
   </div>
 );
 
-const AuthScreen = ({ onContinueLocal }: { onContinueLocal: () => void }) => (
+const AuthScreen = ({ onContinueLocal, pathname }: { onContinueLocal: () => void; pathname: string }) => (
   <div className="min-h-screen bg-slate-100 text-slate-900">
     <main className="mx-auto grid min-h-screen max-w-5xl grid-cols-1 items-center gap-6 px-4 py-8 lg:grid-cols-[minmax(0,1fr)_420px]">
       <section className="grid gap-4">
@@ -1057,7 +1124,7 @@ const AuthScreen = ({ onContinueLocal }: { onContinueLocal: () => void }) => (
         </button>
       </section>
       <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-        <AuthView pathname="sign-in" />
+        <AuthView pathname={pathname} />
       </section>
     </main>
   </div>
@@ -1194,7 +1261,13 @@ const Dashboard = ({ onNewResume, onOpenResume }: DashboardProps) => {
   );
 };
 
-const ConfiguredApp = () => {
+const AuthActionScreen = ({ pathname }: { pathname: string }) => (
+  <div className="grid min-h-screen place-items-center bg-slate-100 text-slate-700">
+    <AuthView pathname={pathname} />
+  </div>
+);
+
+const ConfiguredApp = ({ pathname }: { pathname: string }) => {
   if (!neonClient) return null;
 
   const session = neonClient.auth.useSession();
@@ -1207,8 +1280,12 @@ const ConfiguredApp = () => {
     return <LoadingScreen label="Checking account..." />;
   }
 
+  if (isAuthActionPath(pathname)) {
+    return <AuthActionScreen pathname={pathname} />;
+  }
+
   if (!session.data && !isLocalMode) {
-    return <AuthScreen onContinueLocal={() => setIsLocalMode(true)} />;
+    return <AuthScreen pathname={pathname} onContinueLocal={() => setIsLocalMode(true)} />;
   }
 
   if (isLocalMode) {
@@ -1252,6 +1329,67 @@ const ConfiguredApp = () => {
 
 export default function App() {
   const [continueLocal, setContinueLocal] = useState(false);
+  const [authLocation, setAuthLocation] = useState(getBrowserLocation);
+
+  useEffect(() => {
+    const syncLocation = () => setAuthLocation(getBrowserLocation());
+
+    window.addEventListener("popstate", syncLocation);
+    return () => window.removeEventListener("popstate", syncLocation);
+  }, []);
+
+  const updateAuthLocation = useCallback((href: string, mode: "push" | "replace") => {
+    if (typeof window === "undefined") return;
+
+    const url = new URL(href, window.location.href);
+
+    if (url.origin !== window.location.origin) {
+      window.location.href = href;
+      return;
+    }
+
+    const nextPath = `${url.pathname}${url.search}${url.hash}`;
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+    if (mode === "replace") {
+      window.history.replaceState(null, "", nextPath);
+    } else if (nextPath !== currentPath) {
+      window.history.pushState(null, "", nextPath);
+    }
+
+    setAuthLocation({ pathname: url.pathname, search: url.search, hash: url.hash });
+  }, []);
+
+  const navigateAuth = useCallback((href: string) => updateAuthLocation(href, "push"), [updateAuthLocation]);
+  const replaceAuth = useCallback((href: string) => updateAuthLocation(href, "replace"), [updateAuthLocation]);
+
+  const AuthLink = useCallback(
+    ({ href, className, children }: AuthLinkProps) => {
+      const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey ||
+          !isSameOriginHref(href)
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        navigateAuth(href);
+      };
+
+      return (
+        <a href={href} className={className} onClick={handleClick}>
+          {children}
+        </a>
+      );
+    },
+    [navigateAuth]
+  );
 
   if (!neonConfig.isConfigured && !continueLocal) {
     return <SetupNotice onContinueLocal={() => setContinueLocal(true)} />;
@@ -1262,8 +1400,8 @@ export default function App() {
   }
 
   return (
-    <NeonAuthUIProvider authClient={neonClient!.auth}>
-      <ConfiguredApp />
+    <NeonAuthUIProvider authClient={neonClient!.auth} navigate={navigateAuth} replace={replaceAuth} Link={AuthLink} redirectTo="/">
+      <ConfiguredApp pathname={authLocation.pathname} />
     </NeonAuthUIProvider>
   );
 }

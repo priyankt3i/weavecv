@@ -5,11 +5,12 @@ import { enforceRateLimit } from "./_rateLimit.js";
 
 const model = "gemini-2.5-flash";
 let ai: GoogleGenAI | null = null;
+const missingGeminiKeyMessage = "GEMINI_API_KEY environment variable is not set.";
 
 const getAi = () => {
   if (!ai) {
     if (!process.env.GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY environment variable is not set.");
+      throw new Error(missingGeminiKeyMessage);
     }
     ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   }
@@ -33,6 +34,10 @@ const IMPORTED_TEMPLATE_VERSION = 2;
 
 const isNonEmptyString = (value: unknown, maxLen?: number): value is string => {
   return typeof value === "string" && value.trim().length > 0 && (!maxLen || value.length <= maxLen);
+};
+
+const isMissingGeminiKeyError = (error: unknown) => {
+  return error instanceof Error && error.message === missingGeminiKeyMessage;
 };
 
 const isSuggestion = (value: unknown): value is Suggestion => {
@@ -595,6 +600,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   } catch (error) {
     console.error("Error processing request:", error);
+    if (isMissingGeminiKeyError(error)) {
+      return res.status(503).json({
+        error: "Gemini is not configured. Add GEMINI_API_KEY to your local env and restart the dev server.",
+      });
+    }
     return res.status(500).json({ error: "Internal server error" });
   }
 }

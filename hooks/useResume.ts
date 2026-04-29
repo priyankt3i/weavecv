@@ -189,7 +189,7 @@ export const useResume = () => {
       setResumeMarkdownState(generatedMarkdown);
     } catch (error) {
       console.error("Error generating resume:", error);
-      alert("Failed to generate resume. Please check the console for details.");
+      alert(error instanceof Error ? error.message : "Failed to generate resume. Please check the console for details.");
     } finally {
       setIsLoadingGeneration(false);
     }
