@@ -44,6 +44,18 @@ type AuthLinkProps = {
   children: ReactNode;
 };
 
+type AuthFeedbackVariant = "error" | "success" | "info";
+
+type AuthFeedback = {
+  variant: AuthFeedbackVariant;
+  message: string;
+};
+
+type AuthToast = {
+  variant?: string;
+  message: string;
+};
+
 const getBrowserLocation = (): BrowserLocation => {
   if (typeof window === "undefined") {
     return { pathname: "/", search: "", hash: "" };
@@ -64,6 +76,46 @@ const isSameOriginHref = (href: string) => {
 const isAuthActionPath = (pathname: string) => {
   const segments = pathname.split("/").filter(Boolean);
   return segments[0] === "auth" && ["callback", "sign-out"].includes(segments[segments.length - 1] || "");
+};
+
+const normalizeAuthMessage = (message: string) => {
+  const normalized = message.trim().toLowerCase().replace(/\.$/, "");
+
+  if (normalized === "invalid email or password") {
+    return "The email or password is incorrect. Check your credentials and try again.";
+  }
+  if (normalized === "email not verified" || normalized === "email_not_verified") {
+    return "Please verify your email address before signing in. Check your inbox for the verification link.";
+  }
+  if (normalized === "user already exists" || normalized === "user already exists use another email") {
+    return "An account already exists for that email. Sign in instead, or use a different email.";
+  }
+  if (normalized === "invalid email") {
+    return "Enter a valid email address.";
+  }
+  if (normalized === "password too short") {
+    return "Use a longer password.";
+  }
+  if (normalized === "password too long") {
+    return "Use a shorter password.";
+  }
+  if (normalized === "missing captcha response" || normalized === "captcha verification failed") {
+    return "Complete the verification challenge and try again.";
+  }
+  if (normalized === "too many attempts" || normalized === "rate limit exceeded") {
+    return "Too many attempts. Wait a minute, then try again.";
+  }
+  if (normalized === "request failed") {
+    return "Authentication is temporarily unavailable. Please try again.";
+  }
+
+  return message;
+};
+
+const getAuthFeedbackVariant = (variant: string | undefined): AuthFeedbackVariant => {
+  if (variant === "error") return "error";
+  if (variant === "success") return "success";
+  return "info";
 };
 
 const resumeSessionKeys = [
@@ -1102,7 +1154,41 @@ const SetupNotice = ({ onContinueLocal }: { onContinueLocal: () => void }) => (
   </div>
 );
 
-const AuthScreen = ({ onContinueLocal, pathname }: { onContinueLocal: () => void; pathname: string }) => (
+const AuthFeedbackNotice = ({ feedback, onDismiss }: { feedback: AuthFeedback; onDismiss: () => void }) => {
+  const isError = feedback.variant === "error";
+  const isSuccess = feedback.variant === "success";
+  const classes = isError
+    ? "border-red-200 bg-red-50 text-red-800"
+    : isSuccess
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : "border-sky-200 bg-sky-50 text-sky-800";
+
+  return (
+    <div className={`mb-3 flex gap-3 rounded-md border p-3 text-sm font-semibold leading-5 ${classes}`} role="alert">
+      <p className="min-w-0 flex-1">{feedback.message}</p>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="h-fit rounded-sm px-1 text-current opacity-70 transition hover:bg-white/60 hover:opacity-100"
+        aria-label="Dismiss authentication message"
+      >
+        x
+      </button>
+    </div>
+  );
+};
+
+const AuthScreen = ({
+  authFeedback,
+  onClearAuthFeedback,
+  onContinueLocal,
+  pathname,
+}: {
+  authFeedback: AuthFeedback | null;
+  onClearAuthFeedback: () => void;
+  onContinueLocal: () => void;
+  pathname: string;
+}) => (
   <div className="min-h-screen bg-slate-100 text-slate-900">
     <main className="mx-auto grid min-h-screen max-w-5xl grid-cols-1 items-center gap-6 px-4 py-8 lg:grid-cols-[minmax(0,1fr)_420px]">
       <section className="grid gap-4">
@@ -1124,6 +1210,7 @@ const AuthScreen = ({ onContinueLocal, pathname }: { onContinueLocal: () => void
         </button>
       </section>
       <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+        {authFeedback && <AuthFeedbackNotice feedback={authFeedback} onDismiss={onClearAuthFeedback} />}
         <AuthView pathname={pathname} />
       </section>
     </main>
@@ -1267,7 +1354,15 @@ const AuthActionScreen = ({ pathname }: { pathname: string }) => (
   </div>
 );
 
-const ConfiguredApp = ({ pathname }: { pathname: string }) => {
+const ConfiguredApp = ({
+  authFeedback,
+  onClearAuthFeedback,
+  pathname,
+}: {
+  authFeedback: AuthFeedback | null;
+  onClearAuthFeedback: () => void;
+  pathname: string;
+}) => {
   if (!neonClient) return null;
 
   const session = neonClient.auth.useSession();
@@ -1285,7 +1380,14 @@ const ConfiguredApp = ({ pathname }: { pathname: string }) => {
   }
 
   if (!session.data && !isLocalMode) {
-    return <AuthScreen pathname={pathname} onContinueLocal={() => setIsLocalMode(true)} />;
+    return (
+      <AuthScreen
+        authFeedback={authFeedback}
+        onClearAuthFeedback={onClearAuthFeedback}
+        pathname={pathname}
+        onContinueLocal={() => setIsLocalMode(true)}
+      />
+    );
   }
 
   if (isLocalMode) {
@@ -1330,6 +1432,7 @@ const ConfiguredApp = ({ pathname }: { pathname: string }) => {
 export default function App() {
   const [continueLocal, setContinueLocal] = useState(false);
   const [authLocation, setAuthLocation] = useState(getBrowserLocation);
+  const [authFeedback, setAuthFeedback] = useState<AuthFeedback | null>(null);
   const appOrigin = typeof window === "undefined" ? "" : window.location.origin;
 
   useEffect(() => {
@@ -1363,6 +1466,13 @@ export default function App() {
 
   const navigateAuth = useCallback((href: string) => updateAuthLocation(href, "push"), [updateAuthLocation]);
   const replaceAuth = useCallback((href: string) => updateAuthLocation(href, "replace"), [updateAuthLocation]);
+  const clearAuthFeedback = useCallback(() => setAuthFeedback(null), []);
+  const handleAuthToast = useCallback(({ variant, message }: AuthToast) => {
+    setAuthFeedback({
+      variant: getAuthFeedbackVariant(variant),
+      message: normalizeAuthMessage(message),
+    });
+  }, []);
 
   const AuthLink = useCallback(
     ({ href, className, children }: AuthLinkProps) => {
@@ -1380,6 +1490,7 @@ export default function App() {
         }
 
         event.preventDefault();
+        setAuthFeedback(null);
         navigateAuth(href);
       };
 
@@ -1408,12 +1519,23 @@ export default function App() {
       Link={AuthLink}
       redirectTo="/"
       baseURL={appOrigin}
+      toast={handleAuthToast}
       localization={{
+        INVALID_EMAIL: "Enter a valid email address.",
+        INVALID_EMAIL_OR_PASSWORD: "The email or password is incorrect. Check your credentials and try again.",
         EMAIL_NOT_VERIFIED: "Please verify your email address before signing in. Check your inbox for the verification link.",
+        USER_ALREADY_EXISTS: "An account already exists for that email. Sign in instead, or use a different email.",
+        USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: "An account already exists for that email. Sign in instead, or use a different email.",
+        PASSWORD_TOO_SHORT: "Use a longer password.",
+        PASSWORD_TOO_LONG: "Use a shorter password.",
+        MISSING_RESPONSE: "Complete the verification challenge and try again.",
+        VERIFICATION_FAILED: "Complete the verification challenge and try again.",
+        TOO_MANY_ATTEMPTS: "Too many attempts. Wait a minute, then try again.",
+        REQUEST_FAILED: "Authentication is temporarily unavailable. Please try again.",
         SIGN_UP_EMAIL: "Check your email for the verification link before signing in.",
       }}
     >
-      <ConfiguredApp pathname={authLocation.pathname} />
+      <ConfiguredApp authFeedback={authFeedback} onClearAuthFeedback={clearAuthFeedback} pathname={authLocation.pathname} />
     </NeonAuthUIProvider>
   );
 }
