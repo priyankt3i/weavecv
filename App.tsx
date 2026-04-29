@@ -275,28 +275,51 @@ const TemplateGallery = ({
     {templates.map((template) => {
       const isActive = template.id === activeTemplate.id;
       const isTwoColumn = template.layout.type === "two-column";
+      const hasFeaturedHeader = template.layout.featured?.includes("Header");
       return (
         <button
           key={template.id}
           onClick={() => onSelectTemplate(template)}
-          className={`group grid min-h-[92px] grid-cols-[76px_minmax(0,1fr)] gap-3 rounded-md border p-3 text-left transition ${
+          title={`Apply ${template.name} template`}
+          aria-label={`Apply ${template.name} template`}
+          className={`group grid min-h-[118px] grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border p-3 text-left transition ${
             isActive
               ? "border-sky-500 bg-white ring-2 ring-sky-100"
               : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
           }`}
         >
-          <span className="relative h-[64px] overflow-hidden rounded border border-slate-200 bg-white shadow-sm">
-            <span className="absolute left-0 top-0 h-full w-2" style={{ backgroundColor: template.thumbnailColor }} />
-            <span className="absolute left-4 right-3 top-3 h-2 rounded-sm bg-slate-800/80" />
-            <span className="absolute left-4 right-5 top-7 h-1 rounded-sm bg-slate-300" />
-            <span className="absolute left-4 right-7 top-10 h-1 rounded-sm bg-slate-300" />
+          <span className="relative h-[92px] overflow-hidden rounded border border-slate-200 bg-slate-100 shadow-sm" aria-hidden="true">
+            <span className="absolute inset-x-3 bottom-2 top-2 rounded-sm bg-white shadow-sm" />
+            {hasFeaturedHeader && (
+              <span className="absolute left-3 right-3 top-2 h-4 rounded-t-sm" style={{ backgroundColor: template.thumbnailColor }} />
+            )}
+            <span
+              className={`absolute left-5 top-5 h-2 rounded-sm ${hasFeaturedHeader ? "bg-white/95" : "bg-slate-800/85"}`}
+              style={{ right: isTwoColumn ? "35px" : "20px" }}
+            />
+            <span
+              className={`absolute left-5 top-9 h-1 rounded-sm ${hasFeaturedHeader ? "bg-white/70" : "bg-slate-300"}`}
+              style={{ right: isTwoColumn ? "43px" : "30px" }}
+            />
             {isTwoColumn ? (
               <>
-                <span className="absolute bottom-3 left-4 h-6 w-5 rounded-sm bg-slate-200" />
-                <span className="absolute bottom-3 left-12 right-3 h-6 rounded-sm bg-slate-100" />
+                <span
+                  className="absolute bottom-5 left-5 top-12 w-6 rounded-sm"
+                  style={{ backgroundColor: template.thumbnailColor, opacity: 0.18 }}
+                />
+                <span className="absolute bottom-5 left-14 right-5 top-12 rounded-sm bg-slate-100" />
+                <span className="absolute left-16 right-8 top-[58px] h-1 rounded-sm bg-slate-300" />
+                <span className="absolute left-16 right-10 top-[66px] h-1 rounded-sm bg-slate-300" />
+                <span className="absolute left-7 top-[58px] h-1 w-3 rounded-sm bg-slate-300" />
+                <span className="absolute left-7 top-[66px] h-1 w-4 rounded-sm bg-slate-300" />
               </>
             ) : (
-              <span className="absolute bottom-3 left-4 right-3 h-6 rounded-sm bg-slate-100" />
+              <>
+                <span className="absolute left-5 right-5 top-[52px] h-1 rounded-sm bg-slate-300" />
+                <span className="absolute left-5 right-8 top-[60px] h-1 rounded-sm bg-slate-300" />
+                <span className="absolute left-5 right-11 top-[70px] h-1 rounded-sm bg-slate-300" />
+                <span className="absolute bottom-4 left-5 h-1 w-9 rounded-sm" style={{ backgroundColor: template.thumbnailColor }} />
+              </>
             )}
           </span>
           <span className="flex min-w-0 flex-col justify-center">
