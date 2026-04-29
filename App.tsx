@@ -1330,6 +1330,7 @@ const ConfiguredApp = ({ pathname }: { pathname: string }) => {
 export default function App() {
   const [continueLocal, setContinueLocal] = useState(false);
   const [authLocation, setAuthLocation] = useState(getBrowserLocation);
+  const appOrigin = typeof window === "undefined" ? "" : window.location.origin;
 
   useEffect(() => {
     const syncLocation = () => setAuthLocation(getBrowserLocation());
@@ -1400,7 +1401,18 @@ export default function App() {
   }
 
   return (
-    <NeonAuthUIProvider authClient={neonClient!.auth} navigate={navigateAuth} replace={replaceAuth} Link={AuthLink} redirectTo="/">
+    <NeonAuthUIProvider
+      authClient={neonClient!.auth}
+      navigate={navigateAuth}
+      replace={replaceAuth}
+      Link={AuthLink}
+      redirectTo="/"
+      baseURL={appOrigin}
+      localization={{
+        EMAIL_NOT_VERIFIED: "Please verify your email address before signing in. Check your inbox for the verification link.",
+        SIGN_UP_EMAIL: "Check your email for the verification link before signing in.",
+      }}
+    >
       <ConfiguredApp pathname={authLocation.pathname} />
     </NeonAuthUIProvider>
   );
