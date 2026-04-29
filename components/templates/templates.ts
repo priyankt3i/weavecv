@@ -403,6 +403,7 @@ ${resumePolishBase}
     id: 'classic-onyx',
     name: 'Classic Onyx',
     thumbnailColor: '#2F343B',
+    atsCompliant: true,
     layout: {
       type: 'single-column',
       order: ['Header', 'Professional Summary', 'Work Experience', 'Projects', 'Education', 'Skills', 'Certifications', 'Languages'],
@@ -473,8 +474,8 @@ ${resumePolishBase}
         font-size: 13px;
       }
       .professional-summary p {
-        column-count: 2;
-        column-gap: 30px;
+        max-width: 860px;
+        line-height: 1.62;
       }
       .job {
         margin-bottom: 22px;
@@ -503,9 +504,6 @@ ${resumePolishBase}
           grid-column: auto;
           grid-row: auto;
           text-align: left;
-        }
-        .professional-summary p {
-          column-count: 1;
         }
         .skills .skill-groups {
           grid-template-columns: 1fr;
@@ -786,6 +784,7 @@ ${resumePolishBase}
     id: 'minimalist-gray',
     name: 'Minimalist Gray',
     thumbnailColor: '#64748B',
+    atsCompliant: true,
     layout: {
       type: 'single-column',
       order: ['Header', 'Professional Summary', 'Work Experience', 'Projects', 'Education', 'Skills', 'Certifications', 'Languages'],
@@ -998,6 +997,7 @@ ${resumePolishBase}
     id: 'academic-blue',
     name: 'Academic Blue',
     thumbnailColor: '#1D4E89',
+    atsCompliant: true,
     layout: {
       type: 'single-column',
       order: ['Header', 'Professional Summary', 'Work Experience', 'Projects', 'Education', 'Certifications', 'Skills', 'Languages'],

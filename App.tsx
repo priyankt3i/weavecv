@@ -276,6 +276,7 @@ const TemplateGallery = ({
       const isActive = template.id === activeTemplate.id;
       const isTwoColumn = template.layout.type === "two-column";
       const hasFeaturedHeader = template.layout.featured?.includes("Header");
+      const isAtsCompliant = template.atsCompliant;
       return (
         <button
           key={template.id}
@@ -292,6 +293,11 @@ const TemplateGallery = ({
             <span className="absolute inset-x-3 bottom-2 top-2 rounded-sm bg-white shadow-sm" />
             {hasFeaturedHeader && (
               <span className="absolute left-3 right-3 top-2 h-4 rounded-t-sm" style={{ backgroundColor: template.thumbnailColor }} />
+            )}
+            {isAtsCompliant && (
+              <span className="absolute right-1.5 top-1.5 rounded bg-emerald-600 px-1.5 py-0.5 text-[9px] font-black leading-none text-white shadow-sm ring-1 ring-white/70">
+                ATS
+              </span>
             )}
             <span
               className={`absolute left-5 top-5 h-2 rounded-sm ${hasFeaturedHeader ? "bg-white/95" : "bg-slate-800/85"}`}
@@ -331,6 +337,11 @@ const TemplateGallery = ({
               <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                 {isTwoColumn ? "Two column" : "Single column"}
               </span>
+              {isAtsCompliant && (
+                <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                  ATS
+                </span>
+              )}
               {template.source === "imported" && (
                 <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                   Imported
@@ -1060,6 +1071,7 @@ function ResumeEditor({
                   <h2 className="truncate text-base font-bold text-slate-900">{activeTemplate.name}</h2>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
                     {activeTemplate.layout.type === "two-column" ? "Two column" : "Single column"}
+                    {activeTemplate.atsCompliant ? " · ATS" : ""}
                     {activeTemplate.source === "imported" ? " · Imported" : ""}
                   </p>
                 </div>

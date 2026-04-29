@@ -46,6 +46,7 @@ export interface ResumeTemplate {
   id: string;
   name: string;
   thumbnailColor: string;
+  atsCompliant?: boolean;
   css: string;
   layout: ResumeLayout;
   source?: 'built-in' | 'imported';
