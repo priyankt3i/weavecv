@@ -51,3 +51,30 @@ export interface ResumeTemplate {
   source?: 'built-in' | 'imported';
   templateVersion?: number;
 }
+
+export type ResumeWorkflowStep = 'create' | 'review' | 'design' | 'download';
+
+export interface ResumeDraftSnapshot {
+  rawText: string;
+  tuneForJob: boolean;
+  jobDescription: string;
+  resumeMarkdown: string;
+  activeStep: ResumeWorkflowStep;
+  activeTemplateId: string;
+  importedTemplates: ResumeTemplate[];
+  draftChatMessages: DraftChatMessage[];
+  review: ResumeReview | null;
+  renderSettings: unknown;
+  fileName: string;
+}
+
+export interface SavedResumeSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+  createdAt: string;
+  activeTemplateId: string;
+  fileName: string;
+}
+
+export interface SavedResume extends SavedResumeSummary, ResumeDraftSnapshot {}

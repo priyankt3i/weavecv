@@ -1,10 +1,10 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import type { DraftChatMessage, ResumeReview, ResumeTemplate, Suggestion } from "../types";
+import type { DraftChatMessage, ResumeReview, ResumeTemplate, ResumeWorkflowStep, Suggestion } from "../types";
 import { generateResume, reviewResume, applySuggestion, importResumeTemplate, reviseResumeDraft } from "../services/geminiService";
 import { renderResumeHtml } from "../services/resumeRenderer";
 import { templates } from "../components/templates/templates";
 
-export type WorkflowStep = "create" | "review" | "design" | "download";
+export type WorkflowStep = ResumeWorkflowStep;
 const IMPORTED_TEMPLATE_VERSION = 2;
 const REVIEW_STORAGE_VERSION = 2;
 type PendingDraftChange = {
@@ -189,7 +189,7 @@ export const useResume = () => {
       setResumeMarkdownState(generatedMarkdown);
     } catch (error) {
       console.error("Error generating resume:", error);
-      alert("Failed to generate resume. Please check the console for details.");
+      alert(error instanceof Error ? error.message : "Failed to generate resume. Please check the console for details.");
     } finally {
       setIsLoadingGeneration(false);
     }

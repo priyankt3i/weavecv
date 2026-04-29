@@ -65,15 +65,27 @@ To get WeaveCV up and running on your local machine, follow these steps:
     ```
     These are required in production so rate limiting works across regions.
 
+3.  **Enable Neon Auth and Data API for saved resumes:**
+    Add Neon from the Vercel Marketplace, enable Neon Auth and the Neon Data API, then pull the latest env vars:
+    ```bash
+    vercel env pull .env.local
+    ```
+    The saved-resume dashboard expects:
+    ```
+    VITE_NEON_AUTH_URL=YOUR_NEON_AUTH_URL
+    VITE_NEON_DATA_API_URL=YOUR_NEON_DATA_API_URL
+    ```
+    Run the SQL in `db/schema.sql` from the Neon SQL editor after Auth/Data API are enabled.
+
 ### Running the Application
 
 Run the app through Vercel's local runtime so the frontend and `/api/*` serverless functions use the same origin:
 
 ```bash
-vercel dev
+npm run dev:vercel
 ```
 
-`npm run dev` also starts `vercel dev`. Use `npm run dev:vite` only when you intentionally want the raw Vite server with mocked API calls.
+You can also run `vercel dev` directly. Use `npm run dev` or `npm run dev:vite` only when you intentionally want the raw Vite server with mocked API calls.
 
 Open the local URL printed by the command, usually `http://localhost:3000`. If that port is busy, Vercel will choose another port.
 
