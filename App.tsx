@@ -8,6 +8,7 @@ import { PaginatedResumePreview, type PaginatedResumePreviewHandle } from "./com
 import { neonClient, neonConfig } from "./lib/neonClient";
 import { deleteSavedResume, getSavedResume, listSavedResumes, saveResume } from "./services/savedResumeService";
 import { parseResumeFile } from "./services/resumeFileParser";
+import { injectResumeTypographyStyles, type ResumeTypographySettings } from "./services/resumeRenderer";
 import type { DraftChatMessage, ResumeDraftSnapshot, ResumeTemplate, SavedResume, SavedResumeSummary } from "./types";
 import {
   defaultPdfSettings,
@@ -187,12 +188,18 @@ type RenderSettingsState = {
   paperSizeId: PaperSizePresetId;
   layoutWidthPx: number;
   marginsMm: PdfMarginsMm;
+  typography: ResumeTypographySettings;
 };
 
 const defaultRenderSettingsState: RenderSettingsState = {
   paperSizeId: "a4",
   layoutWidthPx: defaultPdfSettings.layoutWidthPx,
   marginsMm: defaultPdfSettings.marginsMm,
+  typography: {
+    sectionHeaderFontSizePx: 12,
+    bodyLineHeight: 1.5,
+    paragraphSpacingPx: 10,
+  },
 };
 
 const clampNumber = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
@@ -210,6 +217,7 @@ const readStoredRenderSettings = (): RenderSettingsState => {
         ? parsed.layoutWidthPx
         : defaultRenderSettingsState.layoutWidthPx;
     const margins = parsed.marginsMm ?? defaultRenderSettingsState.marginsMm;
+    const typography = parsed.typography ?? defaultRenderSettingsState.typography;
 
     return {
       paperSizeId,
@@ -219,6 +227,11 @@ const readStoredRenderSettings = (): RenderSettingsState => {
         right: clampNumber(Number(margins.right) || 0, 0, 40),
         bottom: clampNumber(Number(margins.bottom) || 0, 0, 40),
         left: clampNumber(Number(margins.left) || 0, 0, 40),
+      },
+      typography: {
+        sectionHeaderFontSizePx: clampNumber(Number(typography.sectionHeaderFontSizePx) || 12, 9, 24),
+        bodyLineHeight: clampNumber(Number(typography.bodyLineHeight) || 1.5, 1.15, 1.85),
+        paragraphSpacingPx: clampNumber(Number(typography.paragraphSpacingPx) || 10, 0, 20),
       },
     };
   } catch {
@@ -378,6 +391,17 @@ const RenderSettingsPanel = ({
     });
   };
 
+  const updateTypography = (key: keyof ResumeTypographySettings, value: string, min: number, max: number) => {
+    const numericValue = clampNumber(Number(value), min, max);
+    onChange({
+      ...settings,
+      typography: {
+        ...settings.typography,
+        [key]: Number.isFinite(numericValue) ? numericValue : defaultRenderSettingsState.typography[key],
+      },
+    });
+  };
+
   return (
     <section className="rounded-md border border-slate-200 bg-white">
       <div className="border-b border-slate-200 p-4">
@@ -439,6 +463,60 @@ const RenderSettingsPanel = ({
               </label>
             ))}
           </div>
+        </fieldset>
+
+        <fieldset className="grid gap-3 border-t border-slate-100 pt-4">
+          <legend className="mb-1">
+            <FieldLabel>Fit Controls</FieldLabel>
+          </legend>
+
+          <label className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-slate-600">Section header size</span>
+              <span className="text-xs font-bold text-slate-500">{settings.typography.sectionHeaderFontSizePx}px</span>
+            </div>
+            <input
+              value={settings.typography.sectionHeaderFontSizePx}
+              onChange={(event) => updateTypography("sectionHeaderFontSizePx", event.target.value, 9, 24)}
+              type="range"
+              min={9}
+              max={24}
+              step={1}
+              className="w-full accent-sky-600"
+            />
+          </label>
+
+          <label className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-slate-600">Body line height</span>
+              <span className="text-xs font-bold text-slate-500">{settings.typography.bodyLineHeight.toFixed(2)}</span>
+            </div>
+            <input
+              value={settings.typography.bodyLineHeight}
+              onChange={(event) => updateTypography("bodyLineHeight", event.target.value, 1.15, 1.85)}
+              type="range"
+              min={1.15}
+              max={1.85}
+              step={0.05}
+              className="w-full accent-sky-600"
+            />
+          </label>
+
+          <label className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-slate-600">Paragraph spacing</span>
+              <span className="text-xs font-bold text-slate-500">{settings.typography.paragraphSpacingPx}px</span>
+            </div>
+            <input
+              value={settings.typography.paragraphSpacingPx}
+              onChange={(event) => updateTypography("paragraphSpacingPx", event.target.value, 0, 20)}
+              type="range"
+              min={0}
+              max={20}
+              step={1}
+              className="w-full accent-sky-600"
+            />
+          </label>
         </fieldset>
       </div>
     </section>
@@ -679,6 +757,10 @@ function ResumeEditor({
   const resumeFileInputRef = useRef<HTMLInputElement>(null);
   const hasDraft = resumeMarkdown.trim().length > 0;
   const pdfSettings = useMemo(() => toPdfSettings(renderSettings), [renderSettings]);
+  const styledResumeHtml = useMemo(
+    () => (resumeHtml ? injectResumeTypographyStyles(resumeHtml, renderSettings.typography) : ""),
+    [resumeHtml, renderSettings.typography]
+  );
 
   useEffect(() => {
     sessionStorage.setItem("pdfRenderSettings", JSON.stringify(renderSettings));
@@ -783,7 +865,7 @@ function ResumeEditor({
   };
 
   const exportResume = async (type: "pdf" | "code") => {
-    if (!resumeHtml) {
+    if (!styledResumeHtml) {
       alert("Create a resume draft before exporting.");
       return;
     }
@@ -797,7 +879,7 @@ function ResumeEditor({
         return;
       }
 
-      const blob = new Blob([resumeHtml], { type: "text/html" });
+      const blob = new Blob([styledResumeHtml], { type: "text/html" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -1139,7 +1221,7 @@ function ResumeEditor({
                 </button>
               </div>
               <div className="p-3">
-                <PaginatedResumePreview ref={paginatedPreviewRef} html={resumeHtml} settings={pdfSettings} title={activeTemplate.name} />
+                <PaginatedResumePreview ref={paginatedPreviewRef} html={styledResumeHtml} settings={pdfSettings} title={activeTemplate.name} />
               </div>
             </div>
           </section>
@@ -1180,7 +1262,7 @@ function ResumeEditor({
             </div>
 
             <div className="min-h-0 rounded-md border border-slate-200 bg-white p-3">
-              <PaginatedResumePreview ref={paginatedPreviewRef} html={resumeHtml} settings={pdfSettings} title={activeTemplate.name} />
+              <PaginatedResumePreview ref={paginatedPreviewRef} html={styledResumeHtml} settings={pdfSettings} title={activeTemplate.name} />
             </div>
           </section>
         )}

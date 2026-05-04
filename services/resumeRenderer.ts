@@ -1,5 +1,11 @@
 import type { ResumeTemplate } from "../types";
 
+export type ResumeTypographySettings = {
+  sectionHeaderFontSizePx: number;
+  bodyLineHeight: number;
+  paragraphSpacingPx: number;
+};
+
 type MarkdownLine =
   | { kind: "heading"; text: string }
   | { kind: "bullet"; text: string }
@@ -103,6 +109,44 @@ const escapeHtml = (value: string): string =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+
+const clampNumber = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+
+const formatCssNumber = (value: number): string => Number(value.toFixed(2)).toString();
+
+export const getResumeTypographyOverrideStyles = (settings: ResumeTypographySettings): string => {
+  const sectionHeaderFontSizePx = clampNumber(settings.sectionHeaderFontSizePx, 9, 24);
+  const bodyLineHeight = clampNumber(settings.bodyLineHeight, 1.15, 1.85);
+  const paragraphSpacingPx = clampNumber(settings.paragraphSpacingPx, 0, 20);
+  const listItemSpacingPx = Math.max(paragraphSpacingPx - 2, 0);
+
+  return `
+      .resume-container {
+        line-height: ${formatCssNumber(bodyLineHeight)} !important;
+      }
+      .resume-container h2 {
+        font-size: ${formatCssNumber(sectionHeaderFontSizePx)}px !important;
+      }
+      .resume-container p,
+      .resume-container li {
+        line-height: ${formatCssNumber(bodyLineHeight)} !important;
+      }
+      .resume-container section p {
+        margin-bottom: ${formatCssNumber(paragraphSpacingPx)}px !important;
+      }
+      .resume-container section p:last-child {
+        margin-bottom: 0 !important;
+      }
+      .resume-container li {
+        margin-bottom: ${formatCssNumber(listItemSpacingPx)}px !important;
+      }
+`;
+};
+
+export const injectResumeTypographyStyles = (html: string, settings: ResumeTypographySettings): string => {
+  const overrideStyle = `<style id="resume-typography-overrides">\n${getResumeTypographyOverrideStyles(settings)}</style>`;
+  return html.includes("</head>") ? html.replace("</head>", `${overrideStyle}\n  </head>`) : `${html}\n${overrideStyle}`;
+};
 
 const formatInline = (value: string): string => {
   const escaped = escapeHtml(value);
