@@ -7,6 +7,7 @@ import { Icon } from "./components/Icon";
 import { PaginatedResumePreview, type PaginatedResumePreviewHandle } from "./components/PaginatedResumePreview";
 import { neonClient, neonConfig } from "./lib/neonClient";
 import { deleteSavedResume, getSavedResume, listSavedResumes, saveResume } from "./services/savedResumeService";
+import { parseResumeFile } from "./services/resumeFileParser";
 import type { DraftChatMessage, ResumeDraftSnapshot, ResumeTemplate, SavedResume, SavedResumeSummary } from "./types";
 import {
   defaultPdfSettings,
@@ -53,7 +54,7 @@ type AuthFeedback = {
 
 type AuthToast = {
   variant?: string;
-  message: string;
+  message?: string;
 };
 
 const getBrowserLocation = (): BrowserLocation => {
@@ -672,7 +673,10 @@ function ResumeEditor({
   const [fileName, setFileName] = useState(() => sessionStorage.getItem("exportFileName") || "resume");
   const [isSavingResume, setIsSavingResume] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [isParsingResumeFile, setIsParsingResumeFile] = useState(false);
+  const [resumeUploadMessage, setResumeUploadMessage] = useState("");
   const paginatedPreviewRef = useRef<PaginatedResumePreviewHandle>(null);
+  const resumeFileInputRef = useRef<HTMLInputElement>(null);
   const hasDraft = resumeMarkdown.trim().length > 0;
   const pdfSettings = useMemo(() => toPdfSettings(renderSettings), [renderSettings]);
 
@@ -713,6 +717,27 @@ function ResumeEditor({
 
     const snapshot = buildSnapshot();
     return onSaveResume(snapshot, inferResumeTitle(snapshot));
+  };
+
+  const handleResumeFileChange = async (event: FormEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || isParsingResumeFile) return;
+
+    setIsParsingResumeFile(true);
+    setResumeUploadMessage(`Reading ${file.name}...`);
+    try {
+      const parsedText = await parseResumeFile(file);
+      setRawText(parsedText);
+      setResumeUploadMessage(`Loaded ${file.name}. Review the extracted text before creating the draft.`);
+    } catch (error) {
+      console.error("Error parsing resume file:", error);
+      const message = error instanceof Error ? error.message : "Unable to read that resume file.";
+      setResumeUploadMessage(message);
+      alert(message);
+    } finally {
+      setIsParsingResumeFile(false);
+    }
   };
 
   const handleSaveResume = async () => {
@@ -868,13 +893,43 @@ function ResumeEditor({
           <section className="grid min-h-[calc(100vh-132px)] grid-cols-1 gap-4 lg:grid-cols-[minmax(280px,420px)_1fr]">
             <div className="flex min-h-0 flex-col gap-4">
               <div className="flex min-h-[42vh] flex-col rounded-md border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 p-4">
-                  <h2 className="text-base font-bold text-slate-800">Resume Text</h2>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-800">Resume Text</h2>
+                    <p className="mt-1 text-xs text-slate-500">Paste text or upload a PDF, DOCX, or TXT resume.</p>
+                  </div>
+                  <input
+                    ref={resumeFileInputRef}
+                    type="file"
+                    accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                    onChange={handleResumeFileChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => resumeFileInputRef.current?.click()}
+                    disabled={isParsingResumeFile}
+                    className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isParsingResumeFile ? (
+                      <Spinner label="Reading" />
+                    ) : (
+                      <>
+                        <Icon name="upload" className="h-4 w-4" />
+                        Upload Resume
+                      </>
+                    )}
+                  </button>
                 </div>
+                {resumeUploadMessage && (
+                  <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-medium text-slate-600">
+                    {resumeUploadMessage}
+                  </div>
+                )}
                 <textarea
                   value={rawText}
                   onChange={(event) => setRawText(event.target.value)}
-                  placeholder="Paste your resume notes here..."
+                  placeholder="Paste your resume notes here or upload an existing resume."
                   className="min-h-0 flex-1 resize-none rounded-b-md border-0 bg-white p-4 text-sm leading-6 text-slate-800 outline-none focus:ring-2 focus:ring-inset focus:ring-sky-100"
                 />
               </div>
@@ -906,7 +961,7 @@ function ResumeEditor({
 
               <button
                 onClick={handleGenerateResume}
-                disabled={isLoadingGeneration}
+                disabled={isLoadingGeneration || isParsingResumeFile}
                 className="flex items-center justify-center gap-2 rounded-md bg-sky-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-300"
               >
                 {isLoadingGeneration ? (
@@ -1503,6 +1558,7 @@ export default function App() {
   const replaceAuth = useCallback((href: string) => updateAuthLocation(href, "replace"), [updateAuthLocation]);
   const clearAuthFeedback = useCallback(() => setAuthFeedback(null), []);
   const handleAuthToast = useCallback(({ variant, message }: AuthToast) => {
+    if (!message) return;
     setAuthFeedback({
       variant: getAuthFeedbackVariant(variant),
       message: normalizeAuthMessage(message),
@@ -1560,7 +1616,6 @@ export default function App() {
         INVALID_EMAIL_OR_PASSWORD: "The email or password is incorrect. Check your credentials and try again.",
         EMAIL_NOT_VERIFIED: "Please verify your email address before signing in. Check your inbox for the verification link.",
         USER_ALREADY_EXISTS: "An account already exists for that email. Sign in instead, or use a different email.",
-        USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: "An account already exists for that email. Sign in instead, or use a different email.",
         PASSWORD_TOO_SHORT: "Use a longer password.",
         PASSWORD_TOO_LONG: "Use a shorter password.",
         MISSING_RESPONSE: "Complete the verification challenge and try again.",
