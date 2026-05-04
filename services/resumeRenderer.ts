@@ -96,6 +96,8 @@ li { margin-bottom: 6px; }
 .skill-group h3 { margin: 0 0 6px; font-size: 0.95em; }
 .skill-list { display: flex; flex-wrap: wrap; gap: 5px; }
 .skill-list span { display: inline-flex; max-width: 100%; overflow-wrap: anywhere; }
+.skill-lines { display: block; margin: 0; padding-left: 18px; }
+.skill-lines li { display: list-item; margin-bottom: 8px; padding-left: 2px; }
 `;
 
 const normalizeKey = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -304,7 +306,30 @@ const renderEntries = (section: ParsedSection, className: string): string => {
     .join("");
 };
 
-const renderSkills = (section: ParsedSection): string => {
+const renderPlainSkills = (section: ParsedSection): string => {
+  const skillItems: string[] = [];
+  const fallbackLines: MarkdownLine[] = [];
+
+  for (const line of section.lines) {
+    const text = line.text.trim();
+    const match = text.match(/^([^:]{2,60}):\s*(.+)$/);
+    if ((line.kind === "bullet" || line.kind === "paragraph") && match) {
+      skillItems.push(`<li><strong>${formatInline(stripMarkdownMarks(match[1]))}:</strong> ${formatInline(match[2])}</li>`);
+    } else {
+      fallbackLines.push(line);
+    }
+  }
+
+  const skills = skillItems.length > 0 ? `<ul class="skill-lines">${skillItems.join("")}</ul>` : "";
+  const fallback = fallbackLines.length > 0 ? renderLineGroup(fallbackLines) : "";
+  return `<section class="skills ats-skills"><h2>${escapeHtml(section.title)}</h2>${skills}${fallback}</section>`;
+};
+
+const renderSkills = (section: ParsedSection, atsPlain = false): string => {
+  if (atsPlain) {
+    return renderPlainSkills(section);
+  }
+
   const groups: string[] = [];
   const fallbackLines: MarkdownLine[] = [];
 
@@ -331,7 +356,7 @@ const renderSkills = (section: ParsedSection): string => {
   return `<section class="skills"><h2>${escapeHtml(section.title)}</h2>${groups.length > 0 ? `<div class="skill-groups">${groups.join("")}</div>` : ""}${fallback}</section>`;
 };
 
-const renderSection = (section: ParsedSection): string => {
+const renderSection = (section: ParsedSection, atsPlain = false): string => {
   const key = normalizeKey(section.title);
   const title = escapeHtml(section.title);
 
@@ -352,7 +377,7 @@ const renderSection = (section: ParsedSection): string => {
   }
 
   if (["skills", "technicalskills", "coreskills"].includes(key)) {
-    return renderSkills(section);
+    return renderSkills(section, atsPlain);
   }
 
   if (["contact", "contactinformation"].includes(key)) {
@@ -380,11 +405,11 @@ const renderContactSection = (resume: ParsedResume): string => {
     .join("")}</div></section>`;
 };
 
-const renderNamedBlock = (resume: ParsedResume, name: string, includeHeaderContact: boolean): string => {
+const renderNamedBlock = (resume: ParsedResume, name: string, includeHeaderContact: boolean, atsPlain = false): string => {
   if (normalizeKey(name) === "header") return renderHeader(resume, includeHeaderContact);
   if (normalizeKey(name) === "contactinformation") return renderContactSection(resume);
   const section = findSection(resume, name);
-  return section ? renderSection(section) : "";
+  return section ? renderSection(section, atsPlain) : "";
 };
 
 const renderTemplateBody = (resume: ParsedResume, template: ResumeTemplate): string => {
@@ -395,19 +420,20 @@ const renderTemplateBody = (resume: ParsedResume, template: ResumeTemplate): str
     ...(template.layout.secondary ?? []),
   ];
   const includeHeaderContact = !layoutNames.some((name) => normalizeKey(name) === "contactinformation");
+  const atsPlain = template.atsCompliant === true;
 
   if (template.layout.type === "two-column") {
-    const featured = (template.layout.featured ?? []).map((name) => renderNamedBlock(resume, name, includeHeaderContact)).join("");
-    const left = (template.layout.secondary ?? []).map((name) => renderNamedBlock(resume, name, includeHeaderContact)).join("");
-    const right = (template.layout.primary ?? []).map((name) => renderNamedBlock(resume, name, includeHeaderContact)).join("");
+    const featured = (template.layout.featured ?? []).map((name) => renderNamedBlock(resume, name, includeHeaderContact, atsPlain)).join("");
+    const left = (template.layout.secondary ?? []).map((name) => renderNamedBlock(resume, name, includeHeaderContact, atsPlain)).join("");
+    const right = (template.layout.primary ?? []).map((name) => renderNamedBlock(resume, name, includeHeaderContact, atsPlain)).join("");
     if (featured) {
-      return `<main class="resume-container has-columns has-featured">${featured}<div class="resume-columns"><aside class="left-column">${left}</aside><div class="right-column">${right}</div></div></main>`;
+      return `<main class="resume-container has-columns has-featured${atsPlain ? " ats-compliant" : ""}">${featured}<div class="resume-columns"><aside class="left-column">${left}</aside><div class="right-column">${right}</div></div></main>`;
     }
-    return `<main class="resume-container has-columns"><aside class="left-column">${left}</aside><div class="right-column">${right}</div></main>`;
+    return `<main class="resume-container has-columns${atsPlain ? " ats-compliant" : ""}"><aside class="left-column">${left}</aside><div class="right-column">${right}</div></main>`;
   }
 
-  const sections = (template.layout.order ?? []).map((name) => renderNamedBlock(resume, name, includeHeaderContact)).join("");
-  return `<main class="resume-container">${sections}</main>`;
+  const sections = (template.layout.order ?? []).map((name) => renderNamedBlock(resume, name, includeHeaderContact, atsPlain)).join("");
+  return `<main class="resume-container${atsPlain ? " ats-compliant" : ""}">${sections}</main>`;
 };
 
 export const renderResumeHtml = (markdown: string, template: ResumeTemplate): string => {
