@@ -75,9 +75,23 @@ const isSameOriginHref = (href: string) => {
   return new URL(href, window.location.href).origin === window.location.origin;
 };
 
-const isAuthActionPath = (pathname: string) => {
+const authRouteSlugs = new Set([
+  "accept-invitation",
+  "callback",
+  "email-otp",
+  "forgot-password",
+  "magic-link",
+  "recover-account",
+  "reset-password",
+  "sign-in",
+  "sign-out",
+  "sign-up",
+  "two-factor",
+]);
+
+const isAuthRoutePath = (pathname: string) => {
   const segments = pathname.split("/").filter(Boolean);
-  return segments[0] === "auth" && ["callback", "sign-out"].includes(segments[segments.length - 1] || "");
+  return segments[0] === "auth" && authRouteSlugs.has(segments[segments.length - 1] || "");
 };
 
 const normalizeAuthMessage = (message: string) => {
@@ -1547,7 +1561,7 @@ const ConfiguredApp = ({
     return <LoadingScreen label="Checking account..." />;
   }
 
-  if (isAuthActionPath(pathname)) {
+  if (isAuthRoutePath(pathname)) {
     return <AuthActionScreen pathname={pathname} />;
   }
 
