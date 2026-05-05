@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
-import { PricingTable, Show, SignInButton, SignUpButton, UserButton as ClerkUserButton, useAuth } from "@clerk/react";
+import { PricingTable, Show, SignInButton, SignUpButton, UserButton as ClerkUserButton, useAuth, useClerk } from "@clerk/react";
 import { AuthView, NeonAuthUIProvider, UserButton as NeonUserButton } from "@neondatabase/neon-js/auth/react/ui";
 import { useResume, type WorkflowStep } from "./hooks/useResume";
 import { ReviewPane } from "./components/ReviewPane";
@@ -307,6 +307,106 @@ const ClerkAccountControls = () => (
     </Show>
   </div>
 );
+
+const SettingsModal = ({
+  isOpen,
+  isProUser,
+  onClose,
+  onRequirePro,
+}: {
+  isOpen: boolean;
+  isProUser: boolean;
+  onClose: () => void;
+  onRequirePro: () => void;
+}) => {
+  const clerk = useClerk();
+
+  if (!isOpen) return null;
+
+  const openBilling = () => {
+    clerk.openUserProfile({ __experimental_startPath: "/billing" });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-0 sm:items-center sm:justify-center sm:p-4" onClick={onClose}>
+      <section
+        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-md bg-white shadow-2xl sm:rounded-md"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Settings</h2>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Account and subscription</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+          >
+            Close
+          </button>
+        </header>
+
+        <main className="grid gap-4 overflow-y-auto p-4">
+          <section className="rounded-md border border-slate-200 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Clerk Account</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Sign in to manage billing and subscription status.</p>
+              </div>
+              <ClerkAccountControls />
+            </div>
+          </section>
+
+          <section className="rounded-md border border-slate-200 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Subscription</h3>
+                <p className="mt-1 text-sm font-semibold text-slate-700">{isProUser ? "WeaveCV Pro is active." : "Standard plan"}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Pro unlocks AI drafting, Ask AI to change, ATS review, suggestion apply, job tuning, and style import.
+                </p>
+              </div>
+              <span
+                className={`rounded border px-2 py-1 text-xs font-black uppercase tracking-[0.08em] ${
+                  isProUser ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"
+                }`}
+              >
+                {isProUser ? "Pro" : "Standard"}
+              </span>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={onRequirePro}
+                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-700"
+              >
+                Compare Plans
+              </button>
+              <Show when="signed-in">
+                <button
+                  type="button"
+                  onClick={openBilling}
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Manage Subscription
+                </button>
+              </Show>
+              <Show when="signed-out">
+                <SignInButton>
+                  <button className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+                    Sign In to Manage
+                  </button>
+                </SignInButton>
+              </Show>
+            </div>
+          </section>
+        </main>
+      </section>
+    </div>
+  );
+};
 
 const MarkdownEditor = ({
   value,
@@ -778,6 +878,7 @@ type ResumeEditorProps = {
   canSaveToCloud?: boolean;
   isProUser?: boolean;
   onRequirePro?: () => void;
+  onOpenSettings?: () => void;
   onBackToDashboard?: () => void;
   onSaveResume?: (snapshot: ResumeDraftSnapshot, title: string) => Promise<SavedResume>;
 };
@@ -787,6 +888,7 @@ function ResumeEditor({
   canSaveToCloud = false,
   isProUser = false,
   onRequirePro = () => undefined,
+  onOpenSettings = () => undefined,
   onBackToDashboard,
   onSaveResume,
 }: ResumeEditorProps) {
@@ -1108,6 +1210,13 @@ function ResumeEditor({
                 {isSavingResume ? "Saving..." : "Save"}
               </button>
             )}
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Settings
+            </button>
             <button
               onClick={resetResume}
               className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
@@ -1542,9 +1651,10 @@ const AuthScreen = ({
 type DashboardProps = {
   onNewResume: () => void;
   onOpenResume: (resume: SavedResume) => void;
+  onOpenSettings: () => void;
 };
 
-const Dashboard = ({ onNewResume, onOpenResume }: DashboardProps) => {
+const Dashboard = ({ onNewResume, onOpenResume, onOpenSettings }: DashboardProps) => {
   const [resumes, setResumes] = useState<SavedResumeSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1609,6 +1719,13 @@ const Dashboard = ({ onNewResume, onOpenResume }: DashboardProps) => {
               className="rounded-md bg-sky-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-sky-700"
             >
               New Resume
+            </button>
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+            >
+              Settings
             </button>
             <NeonUserButton />
           </div>
@@ -1765,12 +1882,14 @@ const ConfiguredApp = ({
   pathname,
   isProUser,
   onRequirePro,
+  onOpenSettings,
 }: {
   authFeedback: AuthFeedback | null;
   onClearAuthFeedback: () => void;
   pathname: string;
   isProUser: boolean;
   onRequirePro: () => void;
+  onOpenSettings: () => void;
 }) => {
   if (!neonClient) return null;
 
@@ -1800,7 +1919,7 @@ const ConfiguredApp = ({
   }
 
   if (isLocalMode) {
-    return <ResumeEditor canSaveToCloud={false} isProUser={isProUser} onRequirePro={onRequirePro} />;
+    return <ResumeEditor canSaveToCloud={false} isProUser={isProUser} onRequirePro={onRequirePro} onOpenSettings={onOpenSettings} />;
   }
 
   const handleNewResume = () => {
@@ -1831,17 +1950,19 @@ const ConfiguredApp = ({
         canSaveToCloud
         isProUser={isProUser}
         onRequirePro={onRequirePro}
+        onOpenSettings={onOpenSettings}
         onBackToDashboard={() => setView("dashboard")}
         onSaveResume={handleSave}
       />
     );
   }
 
-  return <Dashboard onNewResume={handleNewResume} onOpenResume={handleOpenResume} />;
+  return <Dashboard onNewResume={handleNewResume} onOpenResume={handleOpenResume} onOpenSettings={onOpenSettings} />;
 };
 
 export default function App() {
   const [continueLocal, setContinueLocal] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [authLocation, setAuthLocation] = useState(getBrowserLocation);
   const [authFeedback, setAuthFeedback] = useState<AuthFeedback | null>(null);
   const appOrigin = typeof window === "undefined" ? "" : window.location.origin;
@@ -1886,6 +2007,8 @@ export default function App() {
     (isClerkLoaded && (has({ feature: clerkProFeatureKey }) || has({ plan: clerkProPlanKey })));
   const goToPricing = useCallback(() => navigateAuth(PRICING_PATH), [navigateAuth]);
   const leavePricing = useCallback(() => navigateAuth("/"), [navigateAuth]);
+  const openSettings = useCallback(() => setIsSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
   const handleAuthToast = useCallback(({ variant, message }: AuthToast) => {
     if (!message) return;
     setAuthFeedback({
@@ -1925,19 +2048,32 @@ export default function App() {
 
   if (authLocation.pathname === PRICING_PATH) {
     return (
-      <PricingPage
-        isProUser={isProUser}
-        onBack={leavePricing}
-      />
+      <>
+        <PricingPage
+          isProUser={isProUser}
+          onBack={leavePricing}
+        />
+        <SettingsModal isOpen={isSettingsOpen} isProUser={isProUser} onClose={closeSettings} onRequirePro={goToPricing} />
+      </>
     );
   }
 
   if (!neonConfig.isConfigured && !continueLocal) {
-    return <SetupNotice onContinueLocal={() => setContinueLocal(true)} />;
+    return (
+      <>
+        <SetupNotice onContinueLocal={() => setContinueLocal(true)} />
+        <SettingsModal isOpen={isSettingsOpen} isProUser={isProUser} onClose={closeSettings} onRequirePro={goToPricing} />
+      </>
+    );
   }
 
   if (!neonConfig.isConfigured) {
-    return <ResumeEditor canSaveToCloud={false} isProUser={isProUser} onRequirePro={goToPricing} />;
+    return (
+      <>
+        <ResumeEditor canSaveToCloud={false} isProUser={isProUser} onRequirePro={goToPricing} onOpenSettings={openSettings} />
+        <SettingsModal isOpen={isSettingsOpen} isProUser={isProUser} onClose={closeSettings} onRequirePro={goToPricing} />
+      </>
+    );
   }
 
   return (
@@ -1963,13 +2099,17 @@ export default function App() {
         SIGN_UP_EMAIL: "Check your email for the verification link before signing in.",
       }}
     >
-      <ConfiguredApp
-        authFeedback={authFeedback}
-        onClearAuthFeedback={clearAuthFeedback}
-        pathname={authLocation.pathname}
-        isProUser={isProUser}
-        onRequirePro={goToPricing}
-      />
+      <>
+        <ConfiguredApp
+          authFeedback={authFeedback}
+          onClearAuthFeedback={clearAuthFeedback}
+          pathname={authLocation.pathname}
+          isProUser={isProUser}
+          onRequirePro={goToPricing}
+          onOpenSettings={openSettings}
+        />
+        <SettingsModal isOpen={isSettingsOpen} isProUser={isProUser} onClose={closeSettings} onRequirePro={goToPricing} />
+      </>
     </NeonAuthUIProvider>
   );
 }
