@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
-import { AuthView, NeonAuthUIProvider, UserButton } from "@neondatabase/neon-js/auth/react/ui";
+import { PricingTable, Show, SignInButton, SignUpButton, UserButton as ClerkUserButton, useAuth } from "@clerk/react";
+import { AuthView, NeonAuthUIProvider, UserButton as NeonUserButton } from "@neondatabase/neon-js/auth/react/ui";
 import { useResume, type WorkflowStep } from "./hooks/useResume";
 import { ReviewPane } from "./components/ReviewPane";
 import { SuggestionModal } from "./components/SuggestionModal";
@@ -33,6 +34,21 @@ const steps: StepConfig[] = [
 ];
 
 const REVIEW_STORAGE_VERSION = 2;
+const PRICING_PATH = "/pricing";
+const PRO_PRICE_LABEL = "$5/month";
+const DEFAULT_CLERK_PRO_FEATURE_KEY = "ai_resume_tools";
+const DEFAULT_CLERK_PRO_PLAN_KEY = "weavecv_pro";
+
+const proBenefits = [
+  "AI resume drafting from pasted notes or uploaded files",
+  "Ask AI to change your resume draft with safe confirmations",
+  "ATS review with score, correction suggestions, and one-click apply",
+  "Job-description tuning for targeted applications",
+  "AI style import for turning HTML/CSS resumes into reusable templates",
+  "Cloud saves for drafts, reviews, imported styles, and export settings",
+];
+
+const isForcedProUser = () => (import.meta.env.VITE_WEAVECV_FORCE_PRO || "").toLowerCase() === "true";
 
 type BrowserLocation = {
   pathname: string;
@@ -269,6 +285,26 @@ const Spinner = ({ label }: { label: string }) => (
   <div className="flex items-center justify-center gap-2 text-sm font-semibold">
     <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
     <span>{label}</span>
+  </div>
+);
+
+const ClerkAccountControls = () => (
+  <div className="flex flex-wrap items-center gap-2">
+    <Show when="signed-out">
+      <SignInButton>
+        <button className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+          Sign In
+        </button>
+      </SignInButton>
+      <SignUpButton>
+        <button className="rounded-md bg-slate-900 px-3 py-2 text-sm font-bold text-white transition hover:bg-slate-700">
+          Sign Up
+        </button>
+      </SignUpButton>
+    </Show>
+    <Show when="signed-in">
+      <ClerkUserButton />
+    </Show>
   </div>
 );
 
@@ -541,7 +577,9 @@ const DraftChangeChat = ({
   messages,
   isLoading,
   disabled,
+  isProUser,
   hasPendingChange,
+  onRequirePro,
   onSend,
   onConfirm,
   onCancel,
@@ -549,7 +587,9 @@ const DraftChangeChat = ({
   messages: DraftChatMessage[];
   isLoading: boolean;
   disabled: boolean;
+  isProUser: boolean;
   hasPendingChange: boolean;
+  onRequirePro: () => void;
   onSend: (request: string) => Promise<void>;
   onConfirm: () => Promise<void>;
   onCancel: () => void;
@@ -559,6 +599,10 @@ const DraftChangeChat = ({
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextRequest = request.trim();
+    if (!isProUser) {
+      onRequirePro();
+      return;
+    }
     if (!nextRequest || disabled || isLoading || hasPendingChange) return;
     setRequest("");
     await onSend(nextRequest);
@@ -568,9 +612,32 @@ const DraftChangeChat = ({
     <section className="border-t border-slate-200 bg-slate-50">
       <div className="grid gap-3 p-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-bold text-slate-900">Ask AI to change</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-900">Ask AI to change</h3>
+            {!isProUser && (
+              <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-black uppercase tracking-[0.08em] text-amber-700">
+                Pro
+              </span>
+            )}
+          </div>
           {isLoading && <span className="text-xs font-semibold text-slate-500">Thinking...</span>}
         </div>
+
+        {!isProUser && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm font-semibold text-amber-950">AI edits are included with Pro.</p>
+            <p className="mt-1 text-xs leading-5 text-amber-900">
+              Upgrade to use draft changes, ATS review, suggestion apply, job tuning, and style import.
+            </p>
+            <button
+              type="button"
+              onClick={onRequirePro}
+              className="mt-3 rounded-md bg-slate-900 px-3 py-2 text-sm font-bold text-white transition hover:bg-slate-700"
+            >
+              Compare Plans
+            </button>
+          </div>
+        )}
 
         {messages.length > 0 && (
           <div className="max-h-36 overflow-y-auto rounded-md border border-slate-200 bg-white p-2">
@@ -619,16 +686,16 @@ const DraftChangeChat = ({
             value={request}
             onChange={(event) => setRequest(event.target.value)}
             placeholder="Ask AI to change the Markdown draft..."
-            disabled={disabled || isLoading || hasPendingChange}
+            disabled={!isProUser || disabled || isLoading || hasPendingChange}
             className="min-h-[74px] resize-none rounded-md border border-slate-300 bg-white p-3 text-sm leading-5 text-slate-800 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
           />
           <button
             type="submit"
-            disabled={disabled || isLoading || hasPendingChange || !request.trim()}
+            disabled={isProUser && (disabled || isLoading || hasPendingChange || !request.trim())}
             className="flex items-center justify-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-bold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             <Icon name="sparkle" className="h-4 w-4" />
-            Send
+            {isProUser ? "Send" : "Upgrade"}
           </button>
         </form>
       </div>
@@ -709,6 +776,8 @@ const ImportTemplateModal = ({
 type ResumeEditorProps = {
   savedResumeId?: string | null;
   canSaveToCloud?: boolean;
+  isProUser?: boolean;
+  onRequirePro?: () => void;
   onBackToDashboard?: () => void;
   onSaveResume?: (snapshot: ResumeDraftSnapshot, title: string) => Promise<SavedResume>;
 };
@@ -716,6 +785,8 @@ type ResumeEditorProps = {
 function ResumeEditor({
   savedResumeId = null,
   canSaveToCloud = false,
+  isProUser = false,
+  onRequirePro = () => undefined,
   onBackToDashboard,
   onSaveResume,
 }: ResumeEditorProps) {
@@ -910,6 +981,58 @@ function ResumeEditor({
     }
   };
 
+  const requirePro = () => {
+    onRequirePro();
+  };
+
+  const handleGenerateResumeWithProGate = () => {
+    if (!isProUser) {
+      requirePro();
+      return;
+    }
+    void handleGenerateResume();
+  };
+
+  const handleReviewResumeWithProGate = () => {
+    if (!isProUser) {
+      requirePro();
+      return;
+    }
+    void handleReviewResume();
+  };
+
+  const handleRequestDraftChangeWithProGate = async (request: string) => {
+    if (!isProUser) {
+      requirePro();
+      return;
+    }
+    await handleRequestDraftChange(request);
+  };
+
+  const handleConfirmDraftChangeWithProGate = async () => {
+    if (!isProUser) {
+      requirePro();
+      return;
+    }
+    await handleConfirmDraftChange();
+  };
+
+  const handleApplySuggestionWithProGate = async (userInput: string) => {
+    if (!isProUser) {
+      requirePro();
+      return;
+    }
+    await handleApplySuggestion(userInput);
+  };
+
+  const handleOpenImportTemplate = () => {
+    if (!isProUser) {
+      requirePro();
+      return;
+    }
+    setIsImportModalOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -955,6 +1078,17 @@ function ResumeEditor({
           </nav>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={isProUser ? undefined : requirePro}
+              className={`rounded-md border px-3 py-2 text-sm font-bold transition ${
+                isProUser
+                  ? "cursor-default border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+              }`}
+            >
+              {isProUser ? "Pro active" : `Upgrade ${PRO_PRICE_LABEL}`}
+            </button>
             {saveMessage && <span className="text-xs font-semibold text-slate-500">{saveMessage}</span>}
             {onBackToDashboard && (
               <button
@@ -1056,7 +1190,7 @@ function ResumeEditor({
               </div>
 
               <button
-                onClick={handleGenerateResume}
+                onClick={handleGenerateResumeWithProGate}
                 disabled={isLoadingGeneration || isParsingResumeFile}
                 className="flex items-center justify-center gap-2 rounded-md bg-sky-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-300"
               >
@@ -1065,7 +1199,7 @@ function ResumeEditor({
                 ) : (
                   <>
                     <Icon name="generate" className="h-5 w-5" />
-                    Create Draft
+                    {isProUser ? "Create Draft" : "Create Draft with Pro"}
                   </>
                 )}
               </button>
@@ -1093,9 +1227,11 @@ function ResumeEditor({
                 messages={draftChatMessages}
                 isLoading={isLoadingDraftChange}
                 disabled={!hasDraft}
+                isProUser={isProUser}
                 hasPendingChange={!!pendingDraftChange}
-                onSend={(request) => handleRequestDraftChange(request)}
-                onConfirm={handleConfirmDraftChange}
+                onRequirePro={requirePro}
+                onSend={handleRequestDraftChangeWithProGate}
+                onConfirm={handleConfirmDraftChangeWithProGate}
                 onCancel={handleCancelDraftChange}
               />
             </div>
@@ -1109,7 +1245,7 @@ function ResumeEditor({
                 <h2 className="text-base font-bold text-slate-800">Content Editor</h2>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={handleReviewResume}
+                    onClick={handleReviewResumeWithProGate}
                     disabled={!hasDraft || isLoadingReview}
                     className="flex items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
                   >
@@ -1118,7 +1254,7 @@ function ResumeEditor({
                     ) : (
                       <>
                         <Icon name="review" className="h-4 w-4" />
-                        Run ATS Review
+                        {isProUser ? "Run ATS Review" : "Review with Pro"}
                       </>
                     )}
                   </button>
@@ -1192,10 +1328,10 @@ function ResumeEditor({
                           <Icon name="collapse" className="h-5 w-5" />
                         </button>
                         <button
-                          onClick={() => setIsImportModalOpen(true)}
+                          onClick={handleOpenImportTemplate}
                           className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
                         >
-                          Import Style
+                          {isProUser ? "Import Style" : "Import Style Pro"}
                         </button>
                         <button
                           onClick={() => setActiveStep("download")}
@@ -1287,7 +1423,7 @@ function ResumeEditor({
           suggestion={activeSuggestion}
           isOpen={!!activeSuggestion}
           onClose={handleCloseSuggestionModal}
-          onApply={handleApplySuggestion}
+          onApply={handleApplySuggestionWithProGate}
           isLoading={isLoadingApply}
         />
       )}
@@ -1474,7 +1610,7 @@ const Dashboard = ({ onNewResume, onOpenResume }: DashboardProps) => {
             >
               New Resume
             </button>
-            <UserButton />
+            <NeonUserButton />
           </div>
         </div>
       </header>
@@ -1540,14 +1676,101 @@ const AuthActionScreen = ({ pathname }: { pathname: string }) => (
   </div>
 );
 
+const PricingPage = ({
+  isProUser,
+  onBack,
+}: {
+  isProUser: boolean;
+  onBack: () => void;
+}) => (
+  <div className="min-h-screen bg-slate-100 text-slate-900">
+    <header className="border-b border-slate-200 bg-white">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-5">
+        <div className="flex items-center gap-3">
+          <img src="/weave.png" alt="WeaveCV Logo" className="h-9 w-9" />
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">WeaveCV Pro</h1>
+            <p className="text-sm font-semibold text-slate-500">AI resume tools and polished exports</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <ClerkAccountControls />
+          <button
+            type="button"
+            onClick={onBack}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+          >
+            Back
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 sm:px-5">
+      <section className="rounded-md border border-slate-200 bg-white p-5">
+        <p className="text-sm font-black uppercase tracking-[0.1em] text-sky-700">Upgrade required</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <h2 className="text-3xl font-bold tracking-normal text-slate-950">Unlock every AI feature for {PRO_PRICE_LABEL}</h2>
+          {isProUser && (
+            <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-black uppercase tracking-[0.08em] text-emerald-700">
+              Pro active
+            </span>
+          )}
+        </div>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          Standard users can edit manually and export resumes. Pro users get the AI workflow: draft generation, targeted edits, ATS review,
+          suggestion apply, job-description tuning, and style import.
+        </p>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-2">
+        <article className="rounded-md border border-slate-200 bg-white p-5">
+          <h3 className="text-lg font-bold text-slate-900">Standard</h3>
+          <p className="mt-1 text-sm font-semibold text-slate-500">$0</p>
+          <ul className="mt-4 grid gap-2 text-sm leading-6 text-slate-600">
+            <li>Manual Markdown resume editing</li>
+            <li>Template preview and basic design controls</li>
+            <li>PDF export from completed resumes</li>
+            <li>Local drafts without AI calls</li>
+          </ul>
+        </article>
+
+        <article className="rounded-md border-2 border-sky-500 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-lg font-bold text-slate-900">Pro</h3>
+            <span className="rounded bg-sky-600 px-2 py-1 text-xs font-black uppercase tracking-[0.08em] text-white">Best value</span>
+          </div>
+          <p className="mt-1 text-sm font-semibold text-slate-500">{PRO_PRICE_LABEL}</p>
+          <ul className="mt-4 grid gap-2 text-sm leading-6 text-slate-700">
+            {proBenefits.map((benefit) => (
+              <li key={benefit} className="flex gap-2">
+                <Icon name="check" className="mt-0.5 h-4 w-4 flex-none text-emerald-600" />
+                <span>{benefit}</span>
+              </li>
+            ))}
+          </ul>
+        </article>
+      </section>
+
+      <section className="rounded-md border border-slate-200 bg-white p-4">
+        <PricingTable newSubscriptionRedirectUrl="/" />
+      </section>
+    </main>
+  </div>
+);
+
 const ConfiguredApp = ({
   authFeedback,
   onClearAuthFeedback,
   pathname,
+  isProUser,
+  onRequirePro,
 }: {
   authFeedback: AuthFeedback | null;
   onClearAuthFeedback: () => void;
   pathname: string;
+  isProUser: boolean;
+  onRequirePro: () => void;
 }) => {
   if (!neonClient) return null;
 
@@ -1577,7 +1800,7 @@ const ConfiguredApp = ({
   }
 
   if (isLocalMode) {
-    return <ResumeEditor canSaveToCloud={false} />;
+    return <ResumeEditor canSaveToCloud={false} isProUser={isProUser} onRequirePro={onRequirePro} />;
   }
 
   const handleNewResume = () => {
@@ -1606,6 +1829,8 @@ const ConfiguredApp = ({
         key={editorKey}
         savedResumeId={selectedResumeId}
         canSaveToCloud
+        isProUser={isProUser}
+        onRequirePro={onRequirePro}
         onBackToDashboard={() => setView("dashboard")}
         onSaveResume={handleSave}
       />
@@ -1653,6 +1878,14 @@ export default function App() {
   const navigateAuth = useCallback((href: string) => updateAuthLocation(href, "push"), [updateAuthLocation]);
   const replaceAuth = useCallback((href: string) => updateAuthLocation(href, "replace"), [updateAuthLocation]);
   const clearAuthFeedback = useCallback(() => setAuthFeedback(null), []);
+  const { has, isLoaded: isClerkLoaded } = useAuth();
+  const clerkProFeatureKey = (import.meta.env.VITE_CLERK_PRO_FEATURE_KEY as string | undefined) || DEFAULT_CLERK_PRO_FEATURE_KEY;
+  const clerkProPlanKey = (import.meta.env.VITE_CLERK_PRO_PLAN_KEY as string | undefined) || DEFAULT_CLERK_PRO_PLAN_KEY;
+  const isProUser =
+    isForcedProUser() ||
+    (isClerkLoaded && (has({ feature: clerkProFeatureKey }) || has({ plan: clerkProPlanKey })));
+  const goToPricing = useCallback(() => navigateAuth(PRICING_PATH), [navigateAuth]);
+  const leavePricing = useCallback(() => navigateAuth("/"), [navigateAuth]);
   const handleAuthToast = useCallback(({ variant, message }: AuthToast) => {
     if (!message) return;
     setAuthFeedback({
@@ -1690,12 +1923,21 @@ export default function App() {
     [navigateAuth]
   );
 
+  if (authLocation.pathname === PRICING_PATH) {
+    return (
+      <PricingPage
+        isProUser={isProUser}
+        onBack={leavePricing}
+      />
+    );
+  }
+
   if (!neonConfig.isConfigured && !continueLocal) {
     return <SetupNotice onContinueLocal={() => setContinueLocal(true)} />;
   }
 
   if (!neonConfig.isConfigured) {
-    return <ResumeEditor canSaveToCloud={false} />;
+    return <ResumeEditor canSaveToCloud={false} isProUser={isProUser} onRequirePro={goToPricing} />;
   }
 
   return (
@@ -1721,7 +1963,13 @@ export default function App() {
         SIGN_UP_EMAIL: "Check your email for the verification link before signing in.",
       }}
     >
-      <ConfiguredApp authFeedback={authFeedback} onClearAuthFeedback={clearAuthFeedback} pathname={authLocation.pathname} />
+      <ConfiguredApp
+        authFeedback={authFeedback}
+        onClearAuthFeedback={clearAuthFeedback}
+        pathname={authLocation.pathname}
+        isProUser={isProUser}
+        onRequirePro={goToPricing}
+      />
     </NeonAuthUIProvider>
   );
 }

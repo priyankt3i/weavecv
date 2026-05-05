@@ -1,10 +1,14 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { ClerkProvider } from '@clerk/react';
 import App from './App';
 import '@neondatabase/neon-js/ui/css';
 
 const enableMocks = import.meta.env.DEV && import.meta.env.VITE_USE_MOCKS === 'true';
+const ClerkProviderWithEnv = ClerkProvider as React.ComponentType<
+  React.PropsWithChildren<{ afterSignOutUrl?: string }>
+>;
 
 const prepare = async () => {
   if (!enableMocks) return;
@@ -25,7 +29,9 @@ prepare().then(() => {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <React.StrictMode>
-      <App />
+      <ClerkProviderWithEnv afterSignOutUrl="/">
+        <App />
+      </ClerkProviderWithEnv>
     </React.StrictMode>
   );
 });
