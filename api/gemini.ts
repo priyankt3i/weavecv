@@ -450,30 +450,35 @@ forceApply: ${forceApply ? "true" : "false"}
     throw new Error("AI did not return draft revision JSON.");
   }
 
-  const parsed = JSON.parse(cleanupAiResponse(response.text)) as Partial<DraftRevisionResult>;
-  if (!isDraftRevisionDecision(parsed.decision) || typeof parsed.message !== "string") {
-    console.error("Invalid draft revision response:", parsed);
+  try {
+    const parsed = JSON.parse(cleanupAiResponse(response.text)) as Partial<DraftRevisionResult>;
+    if (!isDraftRevisionDecision(parsed.decision) || typeof parsed.message !== "string") {
+      console.error("Invalid draft revision response:", parsed);
+      throw new Error("AI returned an invalid draft revision response.");
+    }
+
+    const result: DraftRevisionResult = {
+      decision: parsed.decision,
+      message: parsed.message,
+    };
+
+    if (typeof parsed.concern === "string" && parsed.concern.trim()) {
+      result.concern = parsed.concern.trim();
+    }
+
+    if (parsed.decision === "applied") {
+      if (!isNonEmptyString(parsed.updatedMarkdown, MAX_MARKDOWN)) {
+        console.error("Draft revision applied without valid Markdown:", parsed);
+        throw new Error("AI did not return updated Markdown.");
+      }
+      result.updatedMarkdown = cleanupAiResponse(parsed.updatedMarkdown);
+    }
+
+    return result;
+  } catch (error) {
+    console.error("Failed to parse draft revision response from Gemini:", response.text);
     throw new Error("AI returned an invalid draft revision response.");
   }
-
-  const result: DraftRevisionResult = {
-    decision: parsed.decision,
-    message: parsed.message,
-  };
-
-  if (typeof parsed.concern === "string" && parsed.concern.trim()) {
-    result.concern = parsed.concern.trim();
-  }
-
-  if (parsed.decision === "applied") {
-    if (!isNonEmptyString(parsed.updatedMarkdown, MAX_MARKDOWN)) {
-      console.error("Draft revision applied without valid Markdown:", parsed);
-      throw new Error("AI did not return updated Markdown.");
-    }
-    result.updatedMarkdown = cleanupAiResponse(parsed.updatedMarkdown);
-  }
-
-  return result;
 };
 
 export const convertHtmlToTemplate = async (templateHtml: string): Promise<ResumeTemplate> => {
