@@ -1,4 +1,27 @@
 import type { DraftRevisionResult, ResumeReview, ResumeTemplate, Suggestion } from '../types';
+import { neonClient } from "../lib/neonClient";
+
+const getNeonJwt = () => {
+  const auth = neonClient?.auth as { getJWTToken?: () => Promise<string | null> } | undefined;
+  return auth?.getJWTToken?.();
+};
+
+const getAiHeaders = async (): Promise<HeadersInit> => {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  try {
+    const token = await getNeonJwt();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+  } catch {
+    // The server will return the correct auth/subscription error.
+  }
+
+  return headers;
+};
 
 const getApiErrorMessage = async (response: Response, fallback: string): Promise<string> => {
   try {
@@ -24,9 +47,7 @@ const getApiErrorMessage = async (response: Response, fallback: string): Promise
 export const generateResume = async (rawText: string, jobDescription: string): Promise<string> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: await getAiHeaders(),
     body: JSON.stringify({
       action: 'generate',
       rawText,
@@ -42,9 +63,7 @@ export const generateResume = async (rawText: string, jobDescription: string): P
 export const reviewResume = async (resumeMarkdown: string): Promise<ResumeReview> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: await getAiHeaders(),
     body: JSON.stringify({
       action: 'review',
       resumeMarkdown,
@@ -59,9 +78,7 @@ export const reviewResume = async (resumeMarkdown: string): Promise<ResumeReview
 export const applySuggestion = async (resumeMarkdown: string, suggestion: Suggestion, userInput: string): Promise<string> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: await getAiHeaders(),
     body: JSON.stringify({
       action: 'apply',
       resumeMarkdown,
@@ -78,9 +95,7 @@ export const applySuggestion = async (resumeMarkdown: string, suggestion: Sugges
 export const importResumeTemplate = async (templateHtml: string): Promise<ResumeTemplate> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: await getAiHeaders(),
     body: JSON.stringify({
       action: 'importTemplate',
       templateHtml,
@@ -99,9 +114,7 @@ export const reviseResumeDraft = async (
 ): Promise<DraftRevisionResult> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: await getAiHeaders(),
     body: JSON.stringify({
       action: 'reviseDraft',
       resumeMarkdown,

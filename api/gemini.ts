@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import type { DraftRevisionDecision, DraftRevisionResult, ResumeReview, ResumeTemplate, Suggestion } from "../types";
 import type { VercelRequest, VercelResponse } from "./_vercelTypes.js";
 import { enforceRateLimit } from "./_rateLimit.js";
+import { verifyProRequest } from "./_billing.js";
 
 const model = "gemini-2.5-flash";
 let ai: GoogleGenAI | null = null;
@@ -551,6 +552,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { action, rawText, jobDescription, resumeMarkdown, suggestion, userInput, templateHtml, forceApply } = body;
 
   try {
+    const proGate = await verifyProRequest(req);
+    if (!proGate.ok) {
+      return res.status(proGate.status).json({ error: proGate.error });
+    }
+
     switch (action) {
       case "generate": {
         if (

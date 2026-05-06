@@ -41,6 +41,32 @@ export type ResumeInsert = {
 
 export type ResumeUpdate = Partial<ResumeInsert>;
 
+export type SubscriptionRow = {
+  owner_id: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_price_id: string | null;
+  subscription_status: string;
+  pro_enabled: boolean;
+  cancel_at_period_end: boolean;
+  current_period_end: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SubscriptionInsert = {
+  owner_id?: string;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+  stripe_price_id?: string | null;
+  subscription_status?: string;
+  pro_enabled?: boolean;
+  cancel_at_period_end?: boolean;
+  current_period_end?: string | null;
+};
+
+export type SubscriptionUpdate = Partial<SubscriptionInsert>;
+
 export type Database = {
   public: {
     Tables: {
@@ -48,6 +74,11 @@ export type Database = {
         Row: ResumeRow;
         Insert: ResumeInsert;
         Update: ResumeUpdate;
+      };
+      user_subscriptions: {
+        Row: SubscriptionRow;
+        Insert: SubscriptionInsert;
+        Update: SubscriptionUpdate;
       };
     };
   };
