@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "./_vercelTypes.js";
-import { getAppUrl, getSql, getStripe, verifyAuthenticatedUser } from "./_billing.js";
+import { getAppUrl, getBillingSql, getStripe, verifyAuthenticatedUser } from "./_billing.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -10,7 +10,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = await verifyAuthenticatedUser(req);
     if (!user.ok) return res.status(user.status).json({ error: user.error });
 
-    const rows = await getSql()`
+    const sql = await getBillingSql();
+    const rows = await sql`
       SELECT stripe_customer_id
       FROM public.user_subscriptions
       WHERE owner_id = ${user.ownerId}

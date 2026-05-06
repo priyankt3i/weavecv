@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 import type { VercelRequest, VercelResponse } from "./_vercelTypes.js";
-import { getSql, getStripe, readRawBody, upsertSubscription } from "./_billing.js";
+import { getBillingSql, getStripe, readRawBody, upsertSubscription } from "./_billing.js";
 
 export const config = {
   api: {
@@ -31,7 +31,8 @@ const resolveOwnerId = async (subscription: Stripe.Subscription) => {
 
   const subscriptionId = subscription.id;
   const customerId = getStringId(subscription.customer);
-  const rows = await getSql()`
+  const sql = await getBillingSql();
+  const rows = await sql`
     SELECT owner_id
     FROM public.user_subscriptions
     WHERE stripe_subscription_id = ${subscriptionId}
