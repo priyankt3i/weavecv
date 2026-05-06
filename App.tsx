@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
-import { PricingTable, Show, SignInButton, SignUpButton, UserButton as ClerkUserButton, useAuth, useClerk } from "@clerk/react";
 import { AuthView, NeonAuthUIProvider, UserButton as NeonUserButton } from "@neondatabase/neon-js/auth/react/ui";
 import { useResume, type WorkflowStep } from "./hooks/useResume";
 import { ReviewPane } from "./components/ReviewPane";
@@ -8,6 +7,7 @@ import { Icon } from "./components/Icon";
 import { PaginatedResumePreview, type PaginatedResumePreviewHandle } from "./components/PaginatedResumePreview";
 import { neonClient, neonConfig } from "./lib/neonClient";
 import { deleteSavedResume, getSavedResume, listSavedResumes, saveResume } from "./services/savedResumeService";
+import { getCurrentSubscription, openCustomerPortal, startProCheckout, type UserSubscription } from "./services/subscriptionService";
 import { parseResumeFile } from "./services/resumeFileParser";
 import { injectResumeTypographyStyles, type ResumeTypographySettings } from "./services/resumeRenderer";
 import type { DraftChatMessage, ResumeDraftSnapshot, ResumeTemplate, SavedResume, SavedResumeSummary } from "./types";
@@ -36,8 +36,6 @@ const steps: StepConfig[] = [
 const REVIEW_STORAGE_VERSION = 2;
 const PRICING_PATH = "/pricing";
 const PRO_PRICE_LABEL = "$5/month";
-const DEFAULT_CLERK_PRO_FEATURE_KEY = "ai_resume_tools";
-const DEFAULT_CLERK_PRO_PLAN_KEY = "weavecv_pro";
 
 const proBenefits = [
   "AI resume drafting from pasted notes or uploaded files",
@@ -49,6 +47,9 @@ const proBenefits = [
 ];
 
 const isForcedProUser = () => (import.meta.env.VITE_WEAVECV_FORCE_PRO || "").toLowerCase() === "true";
+
+const isActiveSubscription = (subscription: UserSubscription | null) =>
+  Boolean(subscription?.proEnabled && ["active", "trialing"].includes(subscription.status));
 
 type BrowserLocation = {
   pathname: string;
@@ -84,6 +85,40 @@ const getBrowserLocation = (): BrowserLocation => {
     search: window.location.search,
     hash: window.location.hash,
   };
+};
+
+const useSubscriptionStatus = (enabled: boolean) => {
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
+  const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
+  const [subscriptionError, setSubscriptionError] = useState("");
+
+  const refreshSubscription = useCallback(async () => {
+    if (!enabled) {
+      setSubscription(null);
+      return null;
+    }
+
+    setIsLoadingSubscription(true);
+    setSubscriptionError("");
+    try {
+      const nextSubscription = await getCurrentSubscription();
+      setSubscription(nextSubscription);
+      return nextSubscription;
+    } catch (error) {
+      console.error("Failed to load subscription:", error);
+      setSubscriptionError("Could not load subscription status.");
+      setSubscription(null);
+      return null;
+    } finally {
+      setIsLoadingSubscription(false);
+    }
+  }, [enabled]);
+
+  useEffect(() => {
+    void refreshSubscription();
+  }, [refreshSubscription]);
+
+  return { subscription, isLoadingSubscription, subscriptionError, refreshSubscription };
 };
 
 const isSameOriginHref = (href: string) => {
@@ -288,44 +323,24 @@ const Spinner = ({ label }: { label: string }) => (
   </div>
 );
 
-const ClerkAccountControls = () => (
-  <div className="flex flex-wrap items-center gap-2">
-    <Show when="signed-out">
-      <SignInButton>
-        <button className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
-          Sign In
-        </button>
-      </SignInButton>
-      <SignUpButton>
-        <button className="rounded-md bg-slate-900 px-3 py-2 text-sm font-bold text-white transition hover:bg-slate-700">
-          Sign Up
-        </button>
-      </SignUpButton>
-    </Show>
-    <Show when="signed-in">
-      <ClerkUserButton />
-    </Show>
-  </div>
-);
-
 const SettingsModal = ({
   isOpen,
   isProUser,
+  subscription,
+  isManagingSubscription,
   onClose,
   onRequirePro,
+  onManageSubscription,
 }: {
   isOpen: boolean;
   isProUser: boolean;
+  subscription: UserSubscription | null;
+  isManagingSubscription: boolean;
   onClose: () => void;
   onRequirePro: () => void;
+  onManageSubscription: () => void;
 }) => {
-  const clerk = useClerk();
-
   if (!isOpen) return null;
-
-  const openBilling = () => {
-    clerk.openUserProfile({ __experimental_startPath: "/billing" });
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-0 sm:items-center sm:justify-center sm:p-4" onClick={onClose}>
@@ -336,7 +351,7 @@ const SettingsModal = ({
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
           <div>
             <h2 className="text-lg font-bold text-slate-900">Settings</h2>
-            <p className="mt-1 text-xs font-semibold text-slate-500">Account and subscription</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Subscription</p>
           </div>
           <button
             type="button"
@@ -349,16 +364,6 @@ const SettingsModal = ({
 
         <main className="grid gap-4 overflow-y-auto p-4">
           <section className="rounded-md border border-slate-200 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Clerk Account</h3>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Sign in to manage billing and subscription status.</p>
-              </div>
-              <ClerkAccountControls />
-            </div>
-          </section>
-
-          <section className="rounded-md border border-slate-200 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">Subscription</h3>
@@ -366,6 +371,11 @@ const SettingsModal = ({
                 <p className="mt-1 text-xs leading-5 text-slate-500">
                   Pro unlocks AI drafting, Ask AI to change, ATS review, suggestion apply, job tuning, and style import.
                 </p>
+                {subscription?.cancelAtPeriodEnd && (
+                  <p className="mt-2 text-xs font-semibold text-amber-700">
+                    Your Pro access remains active until the end of the current billing period.
+                  </p>
+                )}
               </div>
               <span
                 className={`rounded border px-2 py-1 text-xs font-black uppercase tracking-[0.08em] ${
@@ -384,22 +394,14 @@ const SettingsModal = ({
               >
                 Compare Plans
               </button>
-              <Show when="signed-in">
-                <button
-                  type="button"
-                  onClick={openBilling}
-                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-                >
-                  Manage Subscription
-                </button>
-              </Show>
-              <Show when="signed-out">
-                <SignInButton>
-                  <button className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
-                    Sign In to Manage
-                  </button>
-                </SignInButton>
-              </Show>
+              <button
+                type="button"
+                onClick={onManageSubscription}
+                disabled={!subscription || isManagingSubscription}
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                {isManagingSubscription ? "Opening..." : "Manage Subscription"}
+              </button>
             </div>
           </section>
         </main>
@@ -1795,10 +1797,20 @@ const AuthActionScreen = ({ pathname }: { pathname: string }) => (
 
 const PricingPage = ({
   isProUser,
+  checkoutMessage,
+  isStartingCheckout,
+  isManagingSubscription,
   onBack,
+  onSubscribe,
+  onManageSubscription,
 }: {
   isProUser: boolean;
+  checkoutMessage: string;
+  isStartingCheckout: boolean;
+  isManagingSubscription: boolean;
   onBack: () => void;
+  onSubscribe: () => void;
+  onManageSubscription: () => void;
 }) => (
   <div className="min-h-screen bg-slate-100 text-slate-900">
     <header className="border-b border-slate-200 bg-white">
@@ -1811,7 +1823,6 @@ const PricingPage = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <ClerkAccountControls />
           <button
             type="button"
             onClick={onBack}
@@ -1869,8 +1880,29 @@ const PricingPage = ({
         </article>
       </section>
 
-      <section className="rounded-md border border-slate-200 bg-white p-4">
-        <PricingTable newSubscriptionRedirectUrl="/" />
+      <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-950">
+        {checkoutMessage || "Stripe checkout is connected to your WeaveCV account."}
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          {isProUser ? (
+            <button
+              type="button"
+              onClick={onManageSubscription}
+              disabled={isManagingSubscription}
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              {isManagingSubscription ? "Opening..." : "Manage Subscription"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onSubscribe}
+              disabled={isStartingCheckout}
+              className="rounded-md bg-sky-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-300"
+            >
+              {isStartingCheckout ? "Opening Stripe..." : `Subscribe ${PRO_PRICE_LABEL}`}
+            </button>
+          )}
+        </div>
       </section>
     </main>
   </div>
@@ -1880,16 +1912,22 @@ const ConfiguredApp = ({
   authFeedback,
   onClearAuthFeedback,
   pathname,
-  isProUser,
+  isPricingPath,
+  isSettingsOpen,
   onRequirePro,
   onOpenSettings,
+  onCloseSettings,
+  onBackFromPricing,
 }: {
   authFeedback: AuthFeedback | null;
   onClearAuthFeedback: () => void;
   pathname: string;
-  isProUser: boolean;
+  isPricingPath: boolean;
+  isSettingsOpen: boolean;
   onRequirePro: () => void;
   onOpenSettings: () => void;
+  onCloseSettings: () => void;
+  onBackFromPricing: () => void;
 }) => {
   if (!neonClient) return null;
 
@@ -1898,6 +1936,57 @@ const ConfiguredApp = ({
   const [view, setView] = useState<"dashboard" | "editor">("dashboard");
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
   const [editorKey, setEditorKey] = useState("dashboard");
+  const [checkoutMessage, setCheckoutMessage] = useState("");
+  const [isStartingCheckout, setIsStartingCheckout] = useState(false);
+  const [isManagingSubscription, setIsManagingSubscription] = useState(false);
+  const sessionUser = session.data?.user as { id?: string; email?: string | null } | undefined;
+  const {
+    subscription,
+    isLoadingSubscription,
+    subscriptionError,
+    refreshSubscription,
+  } = useSubscriptionStatus(Boolean(sessionUser?.id && !isLocalMode));
+  const isProUser = isForcedProUser() || isActiveSubscription(subscription);
+
+  useEffect(() => {
+    if (!isPricingPath) return;
+
+    const checkoutStatus =
+      typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("checkout") || "";
+    if (checkoutStatus === "success") {
+      setCheckoutMessage("Checkout completed. Stripe will activate Pro after the webhook confirms payment.");
+      void refreshSubscription();
+    } else if (checkoutStatus === "cancelled") {
+      setCheckoutMessage("Checkout was cancelled. You can restart the subscription anytime.");
+    }
+  }, [isPricingPath, refreshSubscription]);
+
+  const handleStartCheckout = useCallback(async () => {
+    if (isStartingCheckout) return;
+    setIsStartingCheckout(true);
+    setCheckoutMessage("");
+
+    try {
+      await startProCheckout(sessionUser?.email || null);
+    } catch (error) {
+      console.error("Failed to start checkout:", error);
+      setCheckoutMessage(error instanceof Error ? error.message : "Unable to start Stripe checkout.");
+      setIsStartingCheckout(false);
+    }
+  }, [isStartingCheckout, sessionUser?.email]);
+
+  const handleManageSubscription = useCallback(async () => {
+    if (isManagingSubscription) return;
+    setIsManagingSubscription(true);
+
+    try {
+      await openCustomerPortal();
+    } catch (error) {
+      console.error("Failed to open customer portal:", error);
+      setCheckoutMessage(error instanceof Error ? error.message : "Unable to open Stripe customer portal.");
+      setIsManagingSubscription(false);
+    }
+  }, [isManagingSubscription]);
 
   if (session.isPending) {
     return <LoadingScreen label="Checking account..." />;
@@ -1919,7 +2008,45 @@ const ConfiguredApp = ({
   }
 
   if (isLocalMode) {
-    return <ResumeEditor canSaveToCloud={false} isProUser={isProUser} onRequirePro={onRequirePro} onOpenSettings={onOpenSettings} />;
+    return (
+      <>
+        <ResumeEditor canSaveToCloud={false} isProUser={isProUser} onRequirePro={onRequirePro} onOpenSettings={onOpenSettings} />
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          isProUser={isProUser}
+          subscription={subscription}
+          isManagingSubscription={isManagingSubscription}
+          onClose={onCloseSettings}
+          onRequirePro={onRequirePro}
+          onManageSubscription={handleManageSubscription}
+        />
+      </>
+    );
+  }
+
+  if (isPricingPath) {
+    return (
+      <>
+        <PricingPage
+          isProUser={isProUser}
+          checkoutMessage={checkoutMessage || subscriptionError || (isLoadingSubscription ? "Checking subscription status..." : "")}
+          isStartingCheckout={isStartingCheckout}
+          isManagingSubscription={isManagingSubscription}
+          onBack={onBackFromPricing}
+          onSubscribe={handleStartCheckout}
+          onManageSubscription={handleManageSubscription}
+        />
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          isProUser={isProUser}
+          subscription={subscription}
+          isManagingSubscription={isManagingSubscription}
+          onClose={onCloseSettings}
+          onRequirePro={onRequirePro}
+          onManageSubscription={handleManageSubscription}
+        />
+      </>
+    );
   }
 
   const handleNewResume = () => {
@@ -1944,20 +2071,44 @@ const ConfiguredApp = ({
 
   if (view === "editor") {
     return (
-      <ResumeEditor
-        key={editorKey}
-        savedResumeId={selectedResumeId}
-        canSaveToCloud
-        isProUser={isProUser}
-        onRequirePro={onRequirePro}
-        onOpenSettings={onOpenSettings}
-        onBackToDashboard={() => setView("dashboard")}
-        onSaveResume={handleSave}
-      />
+      <>
+        <ResumeEditor
+          key={editorKey}
+          savedResumeId={selectedResumeId}
+          canSaveToCloud
+          isProUser={isProUser}
+          onRequirePro={onRequirePro}
+          onOpenSettings={onOpenSettings}
+          onBackToDashboard={() => setView("dashboard")}
+          onSaveResume={handleSave}
+        />
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          isProUser={isProUser}
+          subscription={subscription}
+          isManagingSubscription={isManagingSubscription}
+          onClose={onCloseSettings}
+          onRequirePro={onRequirePro}
+          onManageSubscription={handleManageSubscription}
+        />
+      </>
     );
   }
 
-  return <Dashboard onNewResume={handleNewResume} onOpenResume={handleOpenResume} onOpenSettings={onOpenSettings} />;
+  return (
+    <>
+      {view === "dashboard" && <Dashboard onNewResume={handleNewResume} onOpenResume={handleOpenResume} onOpenSettings={onOpenSettings} />}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        isProUser={isProUser}
+        subscription={subscription}
+        isManagingSubscription={isManagingSubscription}
+        onClose={onCloseSettings}
+        onRequirePro={onRequirePro}
+        onManageSubscription={handleManageSubscription}
+      />
+    </>
+  );
 };
 
 export default function App() {
@@ -1999,12 +2150,7 @@ export default function App() {
   const navigateAuth = useCallback((href: string) => updateAuthLocation(href, "push"), [updateAuthLocation]);
   const replaceAuth = useCallback((href: string) => updateAuthLocation(href, "replace"), [updateAuthLocation]);
   const clearAuthFeedback = useCallback(() => setAuthFeedback(null), []);
-  const { has, isLoaded: isClerkLoaded } = useAuth();
-  const clerkProFeatureKey = (import.meta.env.VITE_CLERK_PRO_FEATURE_KEY as string | undefined) || DEFAULT_CLERK_PRO_FEATURE_KEY;
-  const clerkProPlanKey = (import.meta.env.VITE_CLERK_PRO_PLAN_KEY as string | undefined) || DEFAULT_CLERK_PRO_PLAN_KEY;
-  const isProUser =
-    isForcedProUser() ||
-    (isClerkLoaded && (has({ feature: clerkProFeatureKey }) || has({ plan: clerkProPlanKey })));
+  const isProUser = isForcedProUser();
   const goToPricing = useCallback(() => navigateAuth(PRICING_PATH), [navigateAuth]);
   const leavePricing = useCallback(() => navigateAuth("/"), [navigateAuth]);
   const openSettings = useCallback(() => setIsSettingsOpen(true), []);
@@ -2046,14 +2192,27 @@ export default function App() {
     [navigateAuth]
   );
 
-  if (authLocation.pathname === PRICING_PATH) {
+  if (authLocation.pathname === PRICING_PATH && !neonConfig.isConfigured) {
     return (
       <>
         <PricingPage
           isProUser={isProUser}
+          checkoutMessage="Sign in must be configured before Stripe checkout can start."
+          isStartingCheckout={false}
+          isManagingSubscription={false}
           onBack={leavePricing}
+          onSubscribe={() => undefined}
+          onManageSubscription={() => undefined}
         />
-        <SettingsModal isOpen={isSettingsOpen} isProUser={isProUser} onClose={closeSettings} onRequirePro={goToPricing} />
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          isProUser={isProUser}
+          subscription={null}
+          isManagingSubscription={false}
+          onClose={closeSettings}
+          onRequirePro={goToPricing}
+          onManageSubscription={() => undefined}
+        />
       </>
     );
   }
@@ -2062,7 +2221,15 @@ export default function App() {
     return (
       <>
         <SetupNotice onContinueLocal={() => setContinueLocal(true)} />
-        <SettingsModal isOpen={isSettingsOpen} isProUser={isProUser} onClose={closeSettings} onRequirePro={goToPricing} />
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          isProUser={isProUser}
+          subscription={null}
+          isManagingSubscription={false}
+          onClose={closeSettings}
+          onRequirePro={goToPricing}
+          onManageSubscription={() => undefined}
+        />
       </>
     );
   }
@@ -2071,7 +2238,15 @@ export default function App() {
     return (
       <>
         <ResumeEditor canSaveToCloud={false} isProUser={isProUser} onRequirePro={goToPricing} onOpenSettings={openSettings} />
-        <SettingsModal isOpen={isSettingsOpen} isProUser={isProUser} onClose={closeSettings} onRequirePro={goToPricing} />
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          isProUser={isProUser}
+          subscription={null}
+          isManagingSubscription={false}
+          onClose={closeSettings}
+          onRequirePro={goToPricing}
+          onManageSubscription={() => undefined}
+        />
       </>
     );
   }
@@ -2100,15 +2275,17 @@ export default function App() {
       }}
     >
       <>
-        <ConfiguredApp
-          authFeedback={authFeedback}
-          onClearAuthFeedback={clearAuthFeedback}
-          pathname={authLocation.pathname}
-          isProUser={isProUser}
-          onRequirePro={goToPricing}
-          onOpenSettings={openSettings}
-        />
-        <SettingsModal isOpen={isSettingsOpen} isProUser={isProUser} onClose={closeSettings} onRequirePro={goToPricing} />
+      <ConfiguredApp
+        authFeedback={authFeedback}
+        onClearAuthFeedback={clearAuthFeedback}
+        pathname={authLocation.pathname}
+        isPricingPath={authLocation.pathname === PRICING_PATH}
+        isSettingsOpen={isSettingsOpen}
+        onRequirePro={goToPricing}
+        onOpenSettings={openSettings}
+        onCloseSettings={closeSettings}
+        onBackFromPricing={leavePricing}
+      />
       </>
     </NeonAuthUIProvider>
   );
