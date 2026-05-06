@@ -47,11 +47,25 @@ const readApiError = async (response: Response, fallback: string) => {
   return fallback;
 };
 
+const isMissingSubscriptionTableError = (error: unknown) => {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; message?: unknown };
+  return (
+    record.code === "PGRST205" ||
+    (typeof record.message === "string" && record.message.includes("public.user_subscriptions"))
+  );
+};
+
 export const getCurrentSubscription = async (): Promise<UserSubscription | null> => {
   const client = requireClient();
   const { data, error } = await client.from("user_subscriptions").select("*").maybeSingle();
 
-  if (error) throw error;
+  if (error) {
+    if (isMissingSubscriptionTableError(error)) {
+      return null;
+    }
+    throw error;
+  }
   return data ? toSubscription(data as SubscriptionRow) : null;
 };
 
