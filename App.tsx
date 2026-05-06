@@ -87,7 +87,7 @@ const getBrowserLocation = (): BrowserLocation => {
   };
 };
 
-const useSubscriptionStatus = (enabled: boolean) => {
+const useSubscriptionStatus = (enabled: boolean, ownerId?: string | null) => {
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
   const [subscriptionError, setSubscriptionError] = useState("");
@@ -101,7 +101,7 @@ const useSubscriptionStatus = (enabled: boolean) => {
     setIsLoadingSubscription(true);
     setSubscriptionError("");
     try {
-      const nextSubscription = await getCurrentSubscription();
+      const nextSubscription = await getCurrentSubscription(ownerId);
       setSubscription(nextSubscription);
       return nextSubscription;
     } catch (error) {
@@ -112,7 +112,7 @@ const useSubscriptionStatus = (enabled: boolean) => {
     } finally {
       setIsLoadingSubscription(false);
     }
-  }, [enabled]);
+  }, [enabled, ownerId]);
 
   useEffect(() => {
     void refreshSubscription();
@@ -877,6 +877,7 @@ const ImportTemplateModal = ({
 
 type ResumeEditorProps = {
   savedResumeId?: string | null;
+  ownerId?: string | null;
   canSaveToCloud?: boolean;
   isProUser?: boolean;
   onRequirePro?: () => void;
@@ -887,6 +888,7 @@ type ResumeEditorProps = {
 
 function ResumeEditor({
   savedResumeId = null,
+  ownerId = null,
   canSaveToCloud = false,
   isProUser = false,
   onRequirePro = () => undefined,
@@ -929,7 +931,7 @@ function ResumeEditor({
     handleApplySuggestion,
     handleDiscardSuggestion,
     resetResume,
-  } = useResume();
+  } = useResume({ ownerId });
 
   const [isExporting, setIsExporting] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -1945,7 +1947,7 @@ const ConfiguredApp = ({
     isLoadingSubscription,
     subscriptionError,
     refreshSubscription,
-  } = useSubscriptionStatus(Boolean(sessionUser?.id && !isLocalMode));
+  } = useSubscriptionStatus(Boolean(sessionUser?.id && !isLocalMode), sessionUser?.id);
   const isProUser = isForcedProUser() || isActiveSubscription(subscription);
 
   useEffect(() => {
@@ -1967,26 +1969,28 @@ const ConfiguredApp = ({
     setCheckoutMessage("");
 
     try {
-      await startProCheckout(sessionUser?.email || null);
+      if (!sessionUser?.id) throw new Error("Sign in to continue.");
+      await startProCheckout(sessionUser.id, sessionUser?.email || null);
     } catch (error) {
       console.error("Failed to start checkout:", error);
       setCheckoutMessage(error instanceof Error ? error.message : "Unable to start Stripe checkout.");
       setIsStartingCheckout(false);
     }
-  }, [isStartingCheckout, sessionUser?.email]);
+  }, [isStartingCheckout, sessionUser?.email, sessionUser?.id]);
 
   const handleManageSubscription = useCallback(async () => {
     if (isManagingSubscription) return;
     setIsManagingSubscription(true);
 
     try {
-      await openCustomerPortal();
+      if (!sessionUser?.id) throw new Error("Sign in to continue.");
+      await openCustomerPortal(sessionUser.id);
     } catch (error) {
       console.error("Failed to open customer portal:", error);
       setCheckoutMessage(error instanceof Error ? error.message : "Unable to open Stripe customer portal.");
       setIsManagingSubscription(false);
     }
-  }, [isManagingSubscription]);
+  }, [isManagingSubscription, sessionUser?.id]);
 
   if (session.isPending) {
     return <LoadingScreen label="Checking account..." />;
@@ -2010,7 +2014,7 @@ const ConfiguredApp = ({
   if (isLocalMode) {
     return (
       <>
-        <ResumeEditor canSaveToCloud={false} isProUser={isProUser} onRequirePro={onRequirePro} onOpenSettings={onOpenSettings} />
+        <ResumeEditor canSaveToCloud={false} ownerId={sessionUser?.id ?? null} isProUser={isProUser} onRequirePro={onRequirePro} onOpenSettings={onOpenSettings} />
         <SettingsModal
           isOpen={isSettingsOpen}
           isProUser={isProUser}
@@ -2075,6 +2079,7 @@ const ConfiguredApp = ({
         <ResumeEditor
           key={editorKey}
           savedResumeId={selectedResumeId}
+          ownerId={sessionUser?.id ?? null}
           canSaveToCloud
           isProUser={isProUser}
           onRequirePro={onRequirePro}

@@ -1,75 +1,95 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getCurrentSubscription, openCustomerPortal, startProCheckout } from "../services/subscriptionService";
 
-const neonMocks = vi.hoisted(() => ({
-  from: vi.fn(),
-  authGetJWTToken: vi.fn(),
-}));
+const mockFetch = vi.fn();
+const locationValue = { href: "https://weavecv.test/" };
 
-vi.mock("../lib/neonClient", () => ({
-  neonClient: {
-    auth: {
-      getJWTToken: neonMocks.authGetJWTToken,
-    },
-    from: neonMocks.from,
+Object.defineProperty(globalThis, "fetch", {
+  configurable: true,
+  value: mockFetch,
+});
+
+Object.defineProperty(globalThis, "window", {
+  configurable: true,
+  value: {
+    location: locationValue,
   },
-}));
+});
 
-const { getCurrentSubscription } = await import("../services/subscriptionService");
-
-const mockSubscriptionQuery = (result: unknown) => {
-  const maybeSingle = vi.fn().mockResolvedValue(result);
-  const select = vi.fn(() => ({ maybeSingle }));
-  neonMocks.from.mockReturnValue({ select });
-  return { select, maybeSingle };
-};
+const jsonResponse = (body: unknown, ok = true, status = ok ? 200 : 500) =>
+  ({
+    ok,
+    status,
+    json: vi.fn().mockResolvedValue(body),
+  }) as unknown as Response;
 
 describe("subscription service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    locationValue.href = "https://weavecv.test/";
   });
 
-  it("returns null when Neon Data API schema cache has not seen the subscription table yet", async () => {
-    mockSubscriptionQuery({
-      data: null,
-      error: {
-        code: "PGRST205",
-        message: "Could not find the table 'public.user_subscriptions' in the schema cache",
-      },
-    });
-
-    await expect(getCurrentSubscription()).resolves.toBeNull();
+  it("returns null without a signed-in owner id", async () => {
+    await expect(getCurrentSubscription(null)).resolves.toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("maps a subscription row into app subscription state", async () => {
-    mockSubscriptionQuery({
-      data: {
-        owner_id: "user_123",
-        stripe_customer_id: "cus_123",
-        stripe_subscription_id: "sub_123",
-        stripe_price_id: "price_123",
-        subscription_status: "active",
-        pro_enabled: true,
-        cancel_at_period_end: false,
-        current_period_end: "2026-06-06T00:00:00.000Z",
-        created_at: "2026-05-06T00:00:00.000Z",
-        updated_at: "2026-05-06T00:00:00.000Z",
-      },
-      error: null,
-    });
+  it("loads subscription status through the server API instead of querying Neon Data API from the browser", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        subscription: {
+          ownerId: "user_123",
+          status: "active",
+          proEnabled: true,
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: "2026-06-06T00:00:00.000Z",
+        },
+      })
+    );
 
-    await expect(getCurrentSubscription()).resolves.toEqual({
+    await expect(getCurrentSubscription("user_123")).resolves.toEqual({
       ownerId: "user_123",
       status: "active",
       proEnabled: true,
       cancelAtPeriodEnd: false,
       currentPeriodEnd: "2026-06-06T00:00:00.000Z",
     });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/subscription-status",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ ownerId: "user_123" }),
+      })
+    );
   });
 
-  it("throws unexpected subscription lookup errors", async () => {
-    const error = { code: "42501", message: "permission denied" };
-    mockSubscriptionQuery({ data: null, error });
+  it("opens checkout with the current WeaveCV owner id", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ url: "https://checkout.stripe.test/session" }));
 
-    await expect(getCurrentSubscription()).rejects.toBe(error);
+    await startProCheckout("user_123", "person@example.com");
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/create-checkout-session",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ ownerId: "user_123", email: "person@example.com" }),
+      })
+    );
+    expect(locationValue.href).toBe("https://checkout.stripe.test/session");
+  });
+
+  it("opens the customer portal with the current WeaveCV owner id", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ url: "https://billing.stripe.test/session" }));
+
+    await openCustomerPortal("user_123");
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/create-customer-portal-session",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ ownerId: "user_123" }),
+      })
+    );
+    expect(locationValue.href).toBe("https://billing.stripe.test/session");
   });
 });
