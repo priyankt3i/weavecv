@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from "./_vercelTypes.js";
-import { getAppUrl, getSql, getStripe, readJsonBody, verifyAuthenticatedUser } from "./_billing.js";
+import { getAppUrl, getBillingSql, getStripe, readJsonBody, verifyAuthenticatedUser } from "./_billing.js";
 
 const getCustomerId = async (ownerId: string, email: string | null) => {
-  const sql = getSql();
+  const sql = await getBillingSql();
   const rows = await sql`
     SELECT stripe_customer_id
     FROM public.user_subscriptions

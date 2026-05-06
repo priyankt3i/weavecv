@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "./_vercelTypes.js";
-import { getSql, isProEnabledStatus, readJsonBody } from "./_billing.js";
+import { getBillingSql, isProEnabledStatus, readJsonBody } from "./_billing.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -13,7 +13,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const rows = await getSql()`
+    const sql = await getBillingSql();
+    const rows = await sql`
       SELECT
         owner_id,
         subscription_status,

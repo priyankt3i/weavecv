@@ -6,6 +6,7 @@ type JsonBody = Record<string, unknown>;
 
 let stripeClient: Stripe | null = null;
 let sqlClient: NeonQueryFunction<false, false> | null = null;
+let billingSchemaPromise: Promise<void> | null = null;
 
 const activeSubscriptionStatuses = new Set(["active", "trialing"]);
 
@@ -36,6 +37,113 @@ export const getSql = () => {
     sqlClient = neon(databaseUrl);
   }
   return sqlClient;
+};
+
+const initializeBillingSchema = async () => {
+  const sql = getSql();
+
+  await sql`
+    CREATE OR REPLACE FUNCTION public.current_app_user_id()
+    RETURNS text AS $$
+      WITH jwt AS (
+        SELECT nullif(current_setting('request.jwt.claims', true), '')::jsonb AS claims
+      )
+      SELECT COALESCE(
+        nullif(current_setting('request.jwt.claim.sub', true), ''),
+        claims ->> 'sub',
+        claims ->> 'user_id',
+        claims ->> 'owner_id'
+      )
+      FROM jwt;
+    $$ LANGUAGE sql STABLE
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.user_subscriptions (
+      owner_id text PRIMARY KEY DEFAULT public.current_app_user_id(),
+      stripe_customer_id text UNIQUE,
+      stripe_subscription_id text UNIQUE,
+      stripe_price_id text,
+      subscription_status text NOT NULL DEFAULT 'inactive',
+      pro_enabled boolean NOT NULL DEFAULT false,
+      cancel_at_period_end boolean NOT NULL DEFAULT false,
+      current_period_end timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+
+  await sql`
+    ALTER TABLE public.user_subscriptions
+    ALTER COLUMN owner_id SET DEFAULT public.current_app_user_id()
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS user_subscriptions_customer_idx
+    ON public.user_subscriptions (stripe_customer_id)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS user_subscriptions_subscription_idx
+    ON public.user_subscriptions (stripe_subscription_id)
+  `;
+
+  await sql`
+    CREATE OR REPLACE FUNCTION public.set_updated_at()
+    RETURNS trigger AS $$
+    BEGIN
+      NEW.updated_at = now();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `;
+
+  await sql`
+    DO $$
+    BEGIN
+      CREATE TRIGGER user_subscriptions_set_updated_at
+      BEFORE UPDATE ON public.user_subscriptions
+      FOR EACH ROW
+      EXECUTE FUNCTION public.set_updated_at();
+    EXCEPTION WHEN duplicate_object THEN
+      NULL;
+    END
+    $$
+  `;
+
+  await sql`
+    ALTER TABLE public.user_subscriptions ENABLE ROW LEVEL SECURITY
+  `;
+
+  await sql`
+    DO $$
+    BEGIN
+      CREATE POLICY "Users can read their subscription"
+      ON public.user_subscriptions
+      FOR SELECT
+      TO public
+      USING (owner_id = public.current_app_user_id());
+    EXCEPTION WHEN duplicate_object THEN
+      NULL;
+    END
+    $$
+  `;
+};
+
+export const ensureBillingSchema = async () => {
+  if (!billingSchemaPromise) {
+    billingSchemaPromise = initializeBillingSchema().catch((error: unknown) => {
+      billingSchemaPromise = null;
+      throw error;
+    });
+  }
+
+  await billingSchemaPromise;
+};
+
+export const getBillingSql = async () => {
+  await ensureBillingSchema();
+  return getSql();
 };
 
 export const isProEnabledStatus = (status: string | null | undefined) => activeSubscriptionStatuses.has(status || "");
@@ -139,7 +247,7 @@ export const verifyProRequest = async (req: VercelRequest) => {
   const user = await verifyAuthenticatedUser(req);
   if (!user.ok) return user;
 
-  const sql = getSql();
+  const sql = await getBillingSql();
   const rows = await sql`
     SELECT pro_enabled, subscription_status
     FROM public.user_subscriptions
@@ -172,7 +280,7 @@ export const upsertSubscription = async ({
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: Date | null;
 }) => {
-  const sql = getSql();
+  const sql = await getBillingSql();
   await sql`
     INSERT INTO public.user_subscriptions (
       owner_id,

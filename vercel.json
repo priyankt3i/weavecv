@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/pricing",
+      "destination": "/index.html"
+    },
+    {
       "source": "/auth/:path*",
       "destination": "/index.html"
     }
