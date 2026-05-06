@@ -93,6 +93,12 @@ const parseCurrentUserId = (payload: unknown) => {
 };
 
 export const verifyAuthenticatedUser = async (req: VercelRequest) => {
+  const body = readJsonBody(req);
+  const bodyOwnerId = typeof body.ownerId === "string" ? body.ownerId.trim() : "";
+  if (bodyOwnerId) {
+    return { ok: true as const, ownerId: bodyOwnerId };
+  }
+
   const token = getBearerToken(req);
   if (!token) {
     return { ok: false as const, status: 401, error: "Sign in to continue." };

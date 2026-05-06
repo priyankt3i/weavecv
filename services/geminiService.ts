@@ -1,26 +1,7 @@
 import type { DraftRevisionResult, ResumeReview, ResumeTemplate, Suggestion } from '../types';
-import { neonClient } from "../lib/neonClient";
 
-const getNeonJwt = () => {
-  const auth = neonClient?.auth as { getJWTToken?: () => Promise<string | null> } | undefined;
-  return auth?.getJWTToken?.();
-};
-
-const getAiHeaders = async (): Promise<HeadersInit> => {
-  const headers: Record<string, string> = {
+const aiHeaders: HeadersInit = {
     "Content-Type": "application/json",
-  };
-
-  try {
-    const token = await getNeonJwt();
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-  } catch {
-    // The server will return the correct auth/subscription error.
-  }
-
-  return headers;
 };
 
 const getApiErrorMessage = async (response: Response, fallback: string): Promise<string> => {
@@ -44,12 +25,13 @@ const getApiErrorMessage = async (response: Response, fallback: string): Promise
   return fallback;
 };
 
-export const generateResume = async (rawText: string, jobDescription: string): Promise<string> => {
+export const generateResume = async (rawText: string, jobDescription: string, ownerId?: string | null): Promise<string> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: await getAiHeaders(),
+    headers: aiHeaders,
     body: JSON.stringify({
       action: 'generate',
+      ownerId,
       rawText,
       jobDescription,
     }),
@@ -60,12 +42,13 @@ export const generateResume = async (rawText: string, jobDescription: string): P
   return response.text();
 };
 
-export const reviewResume = async (resumeMarkdown: string): Promise<ResumeReview> => {
+export const reviewResume = async (resumeMarkdown: string, ownerId?: string | null): Promise<ResumeReview> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: await getAiHeaders(),
+    headers: aiHeaders,
     body: JSON.stringify({
       action: 'review',
+      ownerId,
       resumeMarkdown,
     }),
   });
@@ -75,12 +58,18 @@ export const reviewResume = async (resumeMarkdown: string): Promise<ResumeReview
   return response.json();
 };
 
-export const applySuggestion = async (resumeMarkdown: string, suggestion: Suggestion, userInput: string): Promise<string> => {
+export const applySuggestion = async (
+  resumeMarkdown: string,
+  suggestion: Suggestion,
+  userInput: string,
+  ownerId?: string | null
+): Promise<string> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: await getAiHeaders(),
+    headers: aiHeaders,
     body: JSON.stringify({
       action: 'apply',
+      ownerId,
       resumeMarkdown,
       suggestion,
       userInput,
@@ -92,12 +81,13 @@ export const applySuggestion = async (resumeMarkdown: string, suggestion: Sugges
   return response.text();
 };
 
-export const importResumeTemplate = async (templateHtml: string): Promise<ResumeTemplate> => {
+export const importResumeTemplate = async (templateHtml: string, ownerId?: string | null): Promise<ResumeTemplate> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: await getAiHeaders(),
+    headers: aiHeaders,
     body: JSON.stringify({
       action: 'importTemplate',
+      ownerId,
       templateHtml,
     }),
   });
@@ -110,13 +100,15 @@ export const importResumeTemplate = async (templateHtml: string): Promise<Resume
 export const reviseResumeDraft = async (
   resumeMarkdown: string,
   userRequest: string,
-  forceApply = false
+  forceApply = false,
+  ownerId?: string | null
 ): Promise<DraftRevisionResult> => {
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: await getAiHeaders(),
+    headers: aiHeaders,
     body: JSON.stringify({
       action: 'reviseDraft',
+      ownerId,
       resumeMarkdown,
       userInput: userRequest,
       forceApply,

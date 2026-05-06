@@ -1,6 +1,3 @@
-import { neonClient } from "../lib/neonClient";
-import type { SubscriptionRow } from "../lib/neonClient";
-
 export type UserSubscription = {
   ownerId: string;
   status: string;
@@ -8,31 +5,6 @@ export type UserSubscription = {
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
 };
-
-const requireClient = () => {
-  if (!neonClient) {
-    throw new Error("Neon Auth and Data API are not configured.");
-  }
-  return neonClient;
-};
-
-const getAuthToken = async () => {
-  const client = requireClient();
-  const auth = client.auth as { getJWTToken?: () => Promise<string | null> };
-  const token = await auth.getJWTToken?.();
-  if (!token) {
-    throw new Error("Sign in to manage your subscription.");
-  }
-  return token;
-};
-
-const toSubscription = (row: SubscriptionRow): UserSubscription => ({
-  ownerId: row.owner_id,
-  status: row.subscription_status,
-  proEnabled: row.pro_enabled,
-  cancelAtPeriodEnd: row.cancel_at_period_end,
-  currentPeriodEnd: row.current_period_end,
-});
 
 const readApiError = async (response: Response, fallback: string) => {
   try {
@@ -47,37 +19,32 @@ const readApiError = async (response: Response, fallback: string) => {
   return fallback;
 };
 
-const isMissingSubscriptionTableError = (error: unknown) => {
-  if (!error || typeof error !== "object") return false;
-  const record = error as { code?: unknown; message?: unknown };
-  return (
-    record.code === "PGRST205" ||
-    (typeof record.message === "string" && record.message.includes("public.user_subscriptions"))
-  );
-};
+export const getCurrentSubscription = async (ownerId?: string | null): Promise<UserSubscription | null> => {
+  if (!ownerId) return null;
 
-export const getCurrentSubscription = async (): Promise<UserSubscription | null> => {
-  const client = requireClient();
-  const { data, error } = await client.from("user_subscriptions").select("*").maybeSingle();
+  const response = await fetch("/api/subscription-status", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ ownerId }),
+  });
 
-  if (error) {
-    if (isMissingSubscriptionTableError(error)) {
-      return null;
-    }
-    throw error;
+  if (!response.ok) {
+    return null;
   }
-  return data ? toSubscription(data as SubscriptionRow) : null;
+
+  const payload = await response.json();
+  return payload?.subscription ?? null;
 };
 
-export const startProCheckout = async (email?: string | null): Promise<void> => {
-  const token = await getAuthToken();
+export const startProCheckout = async (ownerId: string, email?: string | null): Promise<void> => {
   const response = await fetch("/api/create-checkout-session", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ ownerId, email }),
   });
 
   if (!response.ok) {
@@ -92,14 +59,13 @@ export const startProCheckout = async (email?: string | null): Promise<void> => 
   window.location.href = payload.url;
 };
 
-export const openCustomerPortal = async (): Promise<void> => {
-  const token = await getAuthToken();
+export const openCustomerPortal = async (ownerId: string): Promise<void> => {
   const response = await fetch("/api/create-customer-portal-session", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
+    body: JSON.stringify({ ownerId }),
   });
 
   if (!response.ok) {

@@ -104,7 +104,7 @@ const readStoredReview = (): ResumeReview | null => {
   }
 };
 
-export const useResume = () => {
+export const useResume = ({ ownerId = null }: { ownerId?: string | null } = {}) => {
   const [activeStep, setActiveStep] = useState<WorkflowStep>(() => {
     const savedStep = sessionStorage.getItem("activeStep") as WorkflowStep | null;
     return savedStep ?? "create";
@@ -185,7 +185,7 @@ export const useResume = () => {
     setReview(null);
     setPendingDraftChange(null);
     try {
-      const generatedMarkdown = await generateResume(rawText, tuneForJob ? jobDescription : "");
+      const generatedMarkdown = await generateResume(rawText, tuneForJob ? jobDescription : "", ownerId);
       setResumeMarkdownState(generatedMarkdown);
     } catch (error) {
       console.error("Error generating resume:", error);
@@ -193,7 +193,7 @@ export const useResume = () => {
     } finally {
       setIsLoadingGeneration(false);
     }
-  }, [rawText, tuneForJob, jobDescription]);
+  }, [rawText, tuneForJob, jobDescription, ownerId]);
 
   const handleRequestDraftChange = useCallback(async (request: string, forceApply = false) => {
     if (!resumeMarkdown.trim()) {
@@ -208,7 +208,7 @@ export const useResume = () => {
     }
 
     try {
-      const result = await reviseResumeDraft(resumeMarkdown, request, forceApply);
+      const result = await reviseResumeDraft(resumeMarkdown, request, forceApply, ownerId);
       const tone = result.decision === "blocked" ? "blocked" : result.decision === "needs_confirmation" ? "caution" : "normal";
       setDraftChatMessages((prev) => [...prev, makeChatMessage("assistant", result.message, tone)]);
 
@@ -230,7 +230,7 @@ export const useResume = () => {
     } finally {
       setIsLoadingDraftChange(false);
     }
-  }, [resumeMarkdown]);
+  }, [resumeMarkdown, ownerId]);
 
   const handleConfirmDraftChange = useCallback(async () => {
     if (!pendingDraftChange) return;
@@ -253,7 +253,7 @@ export const useResume = () => {
     setIsLoadingReview(true);
     setReview(null);
     try {
-      const reviewResult = await reviewResume(resumeMarkdown);
+      const reviewResult = await reviewResume(resumeMarkdown, ownerId);
       const suggestionsWithStatus = reviewResult.suggestions.map((suggestion) => ({
         ...suggestion,
         status: "pending" as const,
@@ -265,7 +265,7 @@ export const useResume = () => {
     } finally {
       setIsLoadingReview(false);
     }
-  }, [resumeMarkdown]);
+  }, [resumeMarkdown, ownerId]);
 
   const handleSelectTemplate = useCallback((template: ResumeTemplate) => {
     setActiveTemplate(template);
@@ -279,7 +279,7 @@ export const useResume = () => {
 
     setIsLoadingTemplateImport(true);
     try {
-      const importedTemplate = await importResumeTemplate(templateHtml);
+      const importedTemplate = await importResumeTemplate(templateHtml, ownerId);
       setImportedTemplates((prev) => [...prev, importedTemplate]);
       setActiveTemplate(importedTemplate);
     } catch (error) {
@@ -289,7 +289,7 @@ export const useResume = () => {
     } finally {
       setIsLoadingTemplateImport(false);
     }
-  }, []);
+  }, [ownerId]);
 
   const handleSelectSuggestion = (suggestion: Suggestion) => {
     if (suggestion.status === "pending") {
@@ -306,7 +306,7 @@ export const useResume = () => {
 
     setIsLoadingApply(true);
     try {
-      const updatedMarkdown = await applySuggestion(resumeMarkdown, activeSuggestion, userInput);
+      const updatedMarkdown = await applySuggestion(resumeMarkdown, activeSuggestion, userInput, ownerId);
       setResumeMarkdownState(updatedMarkdown);
       setReview((prev) => {
         if (!prev) return null;
@@ -322,7 +322,7 @@ export const useResume = () => {
     } finally {
       setIsLoadingApply(false);
     }
-  }, [activeSuggestion, resumeMarkdown]);
+  }, [activeSuggestion, resumeMarkdown, ownerId]);
 
   const handleDiscardSuggestion = useCallback((suggestionId: string) => {
     setReview((prev) => {
